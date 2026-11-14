@@ -1,0 +1,113 @@
+name: Wren Pages
+
+on:
+  push:
+    branches: [ours]
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+
+      - name: Install PlatformIO Core
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          # platform-espressif32's builder/main.py imports these unconditionally; its own
+          # penv bootstrap (builder/penv_setup.py) is supposed to install them automatically
+          # but isn't picking them up reliably in this runner image, so pin them explicitly.
+          uv pip install --system -U "littlefs-python>=0.16.0" "fatfs-ng>=0.1.14" "pyyaml>=6.0.2" \
+            "rich-click>=1.8.6" "zopfli>=0.2.2" "intelhex>=2.3.0" "rich>=14.0.0" "urllib3<2" \
+            "cryptography>=45.0.3" "certifi>=2025.8.3" "ecdsa>=0.19.1" "bitstring>=4.3.1" \
+            "reedsolo>=1.5.3,<1.8" "esp-idf-size>=2.0.0" "esp-coredump>=1.14.0"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-v3-${{ runner.os }}-default-${{ hashFiles('platformio.ini', 'scripts/patch_pioarduino_cache.py') }}
+          restore-keys: pio-v3-${{ runner.os }}-default-
+
+      - name: Pin pioarduino core inside the platform penv
+        run: |
+          set -euo pipefail
+          # Envs with custom_sdkconfig (default, sticky) run a nested `pio run` from
+          # ~/.platformio/penv. The platform bootstraps that penv with an open-ended
+          # "pioarduino>=6.1.19", which now resolves to 6.2.0. That core wants
+          # tool-scons 4.11.1 while platform 55.03.311 pins 4.8.1; the two keep
+          # reinstalling over each other and the running SCons loses its package
+          # mid-build ("No module named 'SCons.Tool.FortranCommon'"). Keep the penv
+          # core on the same version as the outer core installed above.
+          # See https://github.com/pioarduino/platform-espressif32/issues/529
+          pio pkg install -e default
+          uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
+          ~/.platformio/penv/bin/pio --version
+
+      - name: Build firmware
+        run: pio run -e default
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test flasher
+        run: node --test web-flasher/test/
+
+      - name: Assemble site
+        run: |
+          python3 - <<'PYTHON'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import shutil
+          site = pathlib.Path('_site')
+          shutil.copytree('web-flasher', site, ignore=shutil.ignore_patterns('_ref', 'test'))
+          shutil.copyfile('.pio/build/default/firmware.bin', site / 'firmware.bin')
+          sha = os.environ['GITHUB_SHA']
+          (site / 'firmware.json').write_text(json.dumps({
+              'sha': sha,
+              'short_sha': sha[:7],
+              'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'env': 'default',
+          }) + '\n')
+          PYTHON
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

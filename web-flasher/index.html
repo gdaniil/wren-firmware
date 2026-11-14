@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Wren for Xteink X3</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+<main>
+  <header><h1>Wren for Xteink X3</h1><p id="build">Loading firmware build…</p></header>
+  <p id="unsupported" hidden>Use Chrome or Edge on a computer to install Wren.</p>
+  <section id="flow" hidden aria-label="Install Wren">
+    <p id="step" class="eyebrow">Step 1 of 3</p>
+    <h2 id="heading">Connect your reader</h2>
+    <p id="hint">Use the 4-pin magnetic cable. The 2-pin cable only charges. Wake the X3 first.</p>
+    <button id="connect" type="button">Connect X3</button>
+    <div id="backup-step" hidden>
+      <button id="backup" type="button">Save a backup</button>
+      <label><input id="already" type="checkbox"> <span>I already have a backup of this X3</span></label>
+      <button id="install" type="button" disabled>Install Wren</button>
+    </div>
+    <div id="progress-wrap" hidden><label id="progress-label" for="progress">Progress</label><progress id="progress" max="100" value="0"></progress><p id="percent">0%</p></div>
+    <p id="status" role="status" aria-live="polite"></p>
+  </section>
+  <noscript>Enable JavaScript in Chrome or Edge on a computer to install Wren.</noscript>
+  <footer id="credits">Made for Xteink X3 · <a href="./LICENSE-THIRD-PARTY.md">Open source credits</a></footer>
+</main>
+</body>
+</html>
