@@ -90,6 +90,10 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 78
+
+Keeps the version 77 binary structure and rebuilds completed and partial section caches for the reader viewport change. Clipping layout signatures use version 5. Book metadata and saved progress are kept.
+
 ### Version 77
 
 Keeps the version 76 binary structure and rebuilds completed and partial section

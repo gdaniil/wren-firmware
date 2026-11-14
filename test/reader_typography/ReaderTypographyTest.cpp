@@ -12,6 +12,11 @@ TEST(ReaderTypography, ConversionAndDefault) {
   EXPECT_EQ(result.xHeightPx, 14);
   EXPECT_EQ(result.linePitchPx, 38);
   EXPECT_EQ(result.sideMarginPx, 16);
+  EXPECT_EQ(result.topMarginPx, 48);
+  EXPECT_EQ(result.bottomMarginPx, 24);
+  const auto large = resolve(X3_PPI, Mode::Large, 0, Font::Literata, "ru");
+  EXPECT_EQ(large.topMarginPx, 96);
+  EXPECT_EQ(large.bottomMarginPx, 48);
   EXPECT_EQ(result.regularWeight, 385);
   EXPECT_EQ(result.boldWeight, 450);
 }

@@ -26,6 +26,20 @@ http://scripts.sil.org/OFL
 Full terms: see the shared OFL 1.1 section at the end of this file.
 
 ========================================================================
+GolosText
+Source: https://raw.githubusercontent.com/google/fonts/main/ofl/golostext/OFL.txt
+========================================================================
+
+Copyright 2019 The Golos Text Project Authors (https://github.com/googlefonts/golos-text)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+Full terms: see the shared OFL 1.1 section at the end of this file.
+
+========================================================================
 Literata
 Source: https://raw.githubusercontent.com/googlefonts/literata/main/OFL.txt
 ========================================================================

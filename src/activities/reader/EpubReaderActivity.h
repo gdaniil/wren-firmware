@@ -19,6 +19,7 @@
 #include "ReaderActivity.h"
 #include "ReaderToolbarUi.h"
 #include "components/OptionPopup.h"
+#include "wren/reader/HintState.h"
 
 class EpubReaderActivity final : public ReaderActivity {
   std::shared_ptr<Epub> epub;
@@ -37,6 +38,8 @@ class EpubReaderActivity final : public ReaderActivity {
   std::optional<uint32_t> pendingOffsetJump;
   unsigned long lastPageTurnTime = 0UL;
   unsigned long pageTurnDuration = 0UL;
+  wren::reader::HintState hints;
+  void drawReaderHints();
   int8_t pendingManualTurn = 0;
   bool pendingManualTurnTouch = false;
   bool pendingPercentJump = false;
@@ -175,7 +178,7 @@ class EpubReaderActivity final : public ReaderActivity {
   // released the section.
   ChapterPosition chapterPosition() const;
   int bookPercentFor(const ChapterPosition& position) const;
-  void openReaderMenu();
+  void openReaderMenu(bool bookmarkAdded = false);
   // Toolbar reader menu (see Overlay above).
   bool usesToolbarMenu() const;
   void openOverlay(Overlay target);

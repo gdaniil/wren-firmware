@@ -119,3 +119,4 @@ add_test(NAME recursive_dictionary COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT
 
 add_subdirectory(reader_typography)
 add_subdirectory(wren_text)
+add_subdirectory(wren_layout)

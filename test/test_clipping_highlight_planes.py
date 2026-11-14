@@ -52,6 +52,8 @@ int main() {
   bool needsTextGrayscale = true;
   auto drawClippingHighlights = [&](Page&, int, int, int) { assert(++order == 1); };
   auto renderStatusBar = [&] { assert(++order == 3); };
+  struct { bool visible() const { return false; } } hints;
+  auto drawReaderHints = [] {};
 """ + render + r"""
   BoardConfig::a4 = true;
   renderGrayscalePass();
