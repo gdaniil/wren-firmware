@@ -12,10 +12,15 @@ const char* lookupHtmlEntity(const char*, size_t) { return nullptr; }
 
 #include <BidiUtils.h>
 
+#ifndef WREN_REAL_HYPHENATION
+bool isAlphabetic(uint32_t cp) {
+  return (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') || (cp >= 0x400 && cp <= 0x52f);
+}
 bool isExplicitHyphen(uint32_t) { return false; }
 bool isSoftHyphen(uint32_t) { return false; }
 
 std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string&, bool) { return {}; }
+#endif
 
 ImageBlock::ImageBlock(const std::string& imagePath, const std::string& srcPath, int16_t width, int16_t height)
     : imagePath(imagePath), srcPath(srcPath), width(width), height(height) {}

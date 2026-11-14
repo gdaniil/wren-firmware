@@ -13,6 +13,7 @@
 
 #include "Epub/FootnoteEntry.h"
 #include "Epub/ParsedText.h"
+#include "Epub/WrenLayout.h"
 #include "Epub/blocks/ImageBlock.h"
 #include "Epub/blocks/TextBlock.h"
 #include "Epub/css/CssParser.h"
@@ -53,6 +54,12 @@ class ChapterHtmlSlimParser {
   std::unique_ptr<Page> currentPage = nullptr;
   int16_t currentPageNextY = 0;
   int fontId;
+  ReaderRenderSpec wrenSpec;
+  uint16_t wrenTopRemainder = 0;
+  uint16_t wrenBottomOverhang = 0;
+  bool wrenEnglish = false;
+  wren::TextLanguage wrenLanguage = wren::TextLanguage::None;
+  bool wrenAfterHeading = false;
   float lineCompression;
   bool extraParagraphSpacing;
   uint8_t paragraphIndentSpaces = 2;
@@ -328,6 +335,7 @@ class ChapterHtmlSlimParser {
     characterSpacing = character;
     wordSpacingPercent = wordPercent;
   }
+  void setWrenTypography(const ReaderRenderSpec& spec, const std::string& language);
   void setParagraphIndentSpaces(const uint8_t spaces) { paragraphIndentSpaces = spaces; }
 
   // One-shot parse: builds every page before returning (begin + step* + finish).

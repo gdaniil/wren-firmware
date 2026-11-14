@@ -92,10 +92,12 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
                            CrossPointSettings::SCREEN_MARGIN_STEP},
                           "screenMargin", StrId::STR_CAT_READER)
            .withTextSettings());
-  emit(SettingInfo::Enum(StrId::STR_PARA_ALIGNMENT, &CrossPointSettings::paragraphAlignment,
-                         {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER, StrId::STR_ALIGN_RIGHT,
-                          StrId::STR_BOOK_S_STYLE},
-                         "paragraphAlignment", StrId::STR_CAT_READER)
+  emit(SettingInfo::DynamicEnum(
+           StrId::STR_PARA_ALIGNMENT,
+           {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER, StrId::STR_ALIGN_RIGHT,
+            StrId::STR_BOOK_S_STYLE},
+           [] { return SETTINGS.paragraphAlignment; }, [](uint8_t value) { SETTINGS.setParagraphAlignment(value); },
+           "paragraphAlignment", StrId::STR_CAT_READER)
            .withTextSettings());
   emit(SettingInfo::Toggle(StrId::STR_EMBEDDED_STYLE, &CrossPointSettings::embeddedStyle, "embeddedStyle",
                            StrId::STR_CAT_READER)

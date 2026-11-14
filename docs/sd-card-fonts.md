@@ -230,3 +230,32 @@ To list all presets with codepoint counts:
 `--force-autohint` — force FreeType's auto-hinter instead of the font's native hinting (useful when a font's built-in hints produce poor results at small sizes).
 
 Install custom fonts via the web interface or manual SD card copy.
+
+## Wren typography
+
+Installing the selected mode's `WrenLiterata`, `WrenGolos`, or `WrenBitter` family
+activates Wren typography when the exact required x-height file is available.
+For example, use `/.fonts/WrenLiterata/WrenLiterata_14.cpfont`. These filename
+numbers are x-height pixels. Missing families or required sizes keep the normal
+reader settings. The mode/step/font settings currently have no dedicated reader UI.
+
+Wren controls margins, line pitch and paragraphs. Small and standard modes use a
+one-em indent; large mode uses no indent and rounds its half-line paragraph gap
+up to one full line. Book CSS paragraph indentation and vertical spacing yield to
+these settings. Headings and inline text cannot grow beyond the mode's body size;
+drop caps become ordinary text and tables use the existing stacked layout.
+Each line with interlinear ruby reserves whole additional grid slots when needed
+to keep glyphs inside the text area. Ordinary text keeps the mode's fixed line pitch.
+
+Unused fractions of a line go above the page's text grid, after reserving any
+body-font glyph overhang below the final advance. Short final pages keep
+the same grid origin. Wren uses left alignment by default. Choosing an alignment
+explicitly overrides it; Justified also enables hyphenation. A saved non-justified
+alignment is retained. Older saved Justified values cannot distinguish the old
+default from an explicit choice; select Justified again to record the override.
+Hyphenation uses the book's language, with no discretionary hyphen at paragraph
+or page ends. Wren uses greedy wrapping without widow/orphan line movement.
+
+Font builds also generate `src/wren/typography/WrenFontMetrics.generated.h`.
+Keep that header with the matching Wren font build: it supplies exact em sizes,
+weights and measured stems without changing the `.cpfont` format.

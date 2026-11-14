@@ -11,6 +11,16 @@
 // existing in a half-filled state — the 0 defaults below are a last-resort
 // backstop (a 0x0 viewport lays out nothing), not an invitation to omit it.
 struct ReaderRenderSpec {
+  // Wren overrides: lengths in pixels, ratios in hundredths; zero preserves upstream.
+  uint16_t linePitchPx = 0;
+  uint16_t fontEmHundredths = 0;
+  uint16_t paragraphIndentEm = 0;
+  uint16_t paragraphSpaceLines = 0;
+  uint8_t hyphenationZone = 0;
+  uint8_t hyphenationMinWordLetters = 0;
+  uint8_t hyphenationMinLeft = 0;
+  uint8_t hyphenationMinRight = 0;
+  uint8_t hyphenationMaxConsecutive = 0;
   int fontId = 0;
   float lineCompression = 1.0f;  // Multiplier of font size in pixels, independent of advanceY.
   bool extraParagraphSpacing = false;
@@ -35,10 +45,20 @@ inline uint32_t readerRenderSpecSignature(const ReaderRenderSpec& spec) {
     signature *= 16777619U;
   };
   // Bump when the same spec values lay out differently, so old clipping word ranges stop matching.
-  constexpr uint32_t LAYOUT_SIGNATURE_VERSION = 2;
+  constexpr uint32_t LAYOUT_SIGNATURE_VERSION = 4;
   mix(LAYOUT_SIGNATURE_VERSION);
   mix(static_cast<uint32_t>(spec.fontId));
   mix(static_cast<uint32_t>(spec.lineCompression * 1000.0f));
+  mix(spec.paragraphIndentSpaces);
+  mix(spec.linePitchPx);
+  mix(spec.fontEmHundredths);
+  mix(spec.paragraphIndentEm);
+  mix(spec.paragraphSpaceLines);
+  mix(spec.hyphenationZone);
+  mix(spec.hyphenationMinWordLetters);
+  mix(spec.hyphenationMinLeft);
+  mix(spec.hyphenationMinRight);
+  mix(spec.hyphenationMaxConsecutive);
   mix(spec.extraParagraphSpacing);
   mix(static_cast<uint8_t>(spec.characterSpacing));
   mix(spec.wordSpacingPercent);

@@ -326,10 +326,11 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t fontPointSize = DEFAULT_FONT_POINT_SIZE;
   uint8_t lineSpacing = LINE_SPACING_120;
   uint8_t paragraphAlignment = JUSTIFIED;
+  bool wrenAlignmentExplicit = false;
   // Auto-sleep timeout setting (default 10 minutes). Legacy sleepTimeout enum values are migration-only.
   uint8_t sleepTimeoutMinutes = 10;
   // E-ink refresh frequency (default 15 pages)
-  uint8_t refreshFrequency = REFRESH_15;
+  uint8_t refreshFrequency = REFRESH_10;  // Wren: full refresh every 10 pages by default
   uint8_t hyphenationEnabled = 0;
 
   // Reader screen margin settings
@@ -430,6 +431,11 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
 
+  // Wren typography steps and fonts are indexed by mode; steps are zero-based.
+  uint8_t wrenMode = 1;
+  uint8_t wrenStep[3] = {1, 0, 0};
+  uint8_t wrenFont[3] = {0, 0, 1};
+
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
   static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
@@ -488,7 +494,15 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // viewport is renderer/orientation-derived, so the caller supplies it —
   // passing it in keeps a spec from ever existing in a half-filled state.
   // Unlocked for the same reason as statusBarSpec(); see the note above.
-  ReaderRenderSpec readerRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight) const;
+  void setParagraphAlignment(uint8_t value) {
+    paragraphAlignment = value;
+    wrenAlignmentExplicit = true;
+  }
+  int readerSideMargin() const;
+  int readerTopMargin() const;
+  int readerBottomMargin() const;
+  ReaderRenderSpec readerRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight,
+                                    const char* bookLanguage = "") const;
 
   static const char* getFilePath() { return "/.crosspoint/settings.json"; }
   void toJson(JsonDocument& doc) const;

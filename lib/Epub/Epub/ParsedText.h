@@ -9,7 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "ReaderRenderSpec.h"
 #include "WordStore.h"
+#include "WrenText.h"
 #include "blocks/BlockStyle.h"
 #include "blocks/TextBlock.h"
 
@@ -95,6 +97,14 @@ class ParsedText {
   bool hasRtlWord;
   bool droppedWords = false;
   int linesAfterCurrent = -1;
+  ReaderRenderSpec wrenSpec;
+  wren::TextLanguage wrenLanguage = wren::TextLanguage::None;
+  wren::QuoteState wrenQuotes;
+  size_t wrenProcessedWords = 0;
+  bool preprocessWrenText();
+  bool insertWrenAbsorbedOffset(uint32_t offset);
+  uint8_t consecutiveHyphens = 0;
+  uint16_t wrenFirstPageLines = 0, wrenFullPageLines = 0;
   bool firstLineConsumed = false;
   // Separate from firstLineConsumed: a <br> line suppresses the indent but still starts a
   // new clipping paragraph.
@@ -120,6 +130,7 @@ class ParsedText {
   int calculateRubyExtraStartOffset(size_t wordIdx, size_t maxWordIdx, const GfxRenderer& renderer, int fontId) const;
   int calculateRubyExtraEndOffset(size_t lineStartIdx, size_t lineBreakIdx, const GfxRenderer& renderer,
                                   int fontId) const;
+  unsigned wrenLineSlots(size_t start, size_t end, const GfxRenderer& renderer, int fontId) const;
   int resolveFirstLineIndent(bool isFirstLine, const GfxRenderer& renderer, int fontId) const;
   std::vector<size_t> computeLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
                                         std::vector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
@@ -164,6 +175,14 @@ class ParsedText {
   void ensureRubyCapacity();
   void suppressFirstLineIndent() { firstLineConsumed = true; }
   void resetFirstLineIndent() { firstLineConsumed = paragraphStartEmitted = false; }
+  void setWrenPageLines(uint16_t first, uint16_t full) {
+    wrenFirstPageLines = first;
+    wrenFullPageLines = full;
+  }
+  void setWrenTypography(const ReaderRenderSpec& spec, wren::TextLanguage language = wren::TextLanguage::None) {
+    wrenSpec = spec;
+    wrenLanguage = language;
+  }
   void setBlockStyle(const BlockStyle& blockStyle) { this->blockStyle = blockStyle; }
   void setHyphenationEnabled(const bool enabled) { hyphenationEnabled = enabled; }
   bool isHyphenationEnabled() const { return hyphenationEnabled; }
@@ -172,6 +191,7 @@ class ParsedText {
   bool isEmpty() const { return words.empty(); }
   // True once any word was dropped because the text arena could not allocate.
   // Callers must treat the block as incomplete and fail the section build.
+  bool hasRuby() const { return !rubyTexts.empty(); }
   bool hadDroppedWords() const { return droppedWords; }
   // While a line is being handed to layoutAndExtractLines' callback: how many lines of the
   // paragraph follow it, or -1 when the rest of the paragraph is not laid out yet.

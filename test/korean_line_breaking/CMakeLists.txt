@@ -1,6 +1,8 @@
 add_executable(KoreanLineBreakingTest
   KoreanLineBreakingTest.cpp
   ${REPO_ROOT}/lib/Epub/Epub/ParsedText.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/WrenParsedText.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/WrenText.cpp
   ${REPO_ROOT}/lib/Epub/Epub/WordStore.cpp
   ${REPO_ROOT}/lib/Epub/Epub/blocks/TextBlock.cpp
   ${REPO_ROOT}/lib/Epub/Epub/CjkBreaks.cpp

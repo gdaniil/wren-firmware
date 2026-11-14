@@ -505,13 +505,13 @@ void EpubReaderActivity::startClipSelection(const int initialX, const int initia
     requestUpdate();
     return;
   }
-  const uint32_t layoutSignature =
-      readerRenderSpecSignature(SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight));
+  const uint32_t layoutSignature = readerRenderSpecSignature(
+      SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight, epub->getLanguage().c_str()));
 
   int marginTop, marginRight, marginBottom, marginLeft;
   renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
-  marginTop += SETTINGS.screenMargin;
-  marginLeft += SETTINGS.screenMargin;
+  marginTop += SETTINGS.readerTopMargin();
+  marginLeft += SETTINGS.readerSideMargin();
 
   std::string chapterTitle;
   const int tocIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
@@ -582,7 +582,7 @@ void EpubReaderActivity::startClipSelection(const int initialX, const int initia
         vocabulary.seriesIndex = vocabularyMetadata->seriesIndex;
       }
       auto lookup = makeUniqueNoThrow<DictionaryWordSelectActivity>(
-          renderer, mappedInput, std::move(page), left + SETTINGS.screenMargin, top + SETTINGS.screenMargin,
+          renderer, mappedInput, std::move(page), left + SETTINGS.readerSideMargin(), top + SETTINGS.readerTopMargin(),
           clipping.text, std::move(vocabulary));
       if (!lookup) {
         LOG_ERR("CLIP", "OOM: dictionary lookup activity");
@@ -630,8 +630,8 @@ void EpubReaderActivity::openFootnoteSelect(const bool reopenMenuOnCancel) {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += SETTINGS.screenMargin;
-  orientedMarginLeft += SETTINGS.screenMargin;
+  orientedMarginTop += SETTINGS.readerTopMargin();
+  orientedMarginLeft += SETTINGS.readerSideMargin();
   auto selector = makeUniqueNoThrow<EpubReaderFootnoteSelectActivity>(renderer, mappedInput, std::move(page),
                                                                       orientedMarginLeft, orientedMarginTop);
   if (!selector) {
@@ -743,7 +743,8 @@ void EpubReaderActivity::loop() {
     if (lock.ownsLock() && section && !section->isBuilding() && section->isPartial() && buildViewportWidth > 0 &&
         !partialRebuildStartFailed && !bleturner::holdsHeap() &&
         section->currentPage + PARTIAL_REBUILD_START_MARGIN >= static_cast<int>(section->pageCount)) {
-      const ReaderRenderSpec buildSpec = SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight);
+      const ReaderRenderSpec buildSpec =
+          SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight, epub->getLanguage().c_str());
       if (!section->startBuild(buildSpec)) {
         partialRebuildStartFailed = true;
         LOG_ERR("ERS", "Failed to start deferred partial extension build");
@@ -1678,18 +1679,20 @@ void EpubReaderActivity::renderBook() {
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
-  orientedMarginTop += SETTINGS.screenMargin;
-  orientedMarginLeft += SETTINGS.screenMargin;
-  orientedMarginRight += SETTINGS.screenMargin;
+  orientedMarginTop += SETTINGS.readerTopMargin();
+  orientedMarginLeft += SETTINGS.readerSideMargin();
+  orientedMarginRight += SETTINGS.readerSideMargin();
 
   const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
 
   if (automaticPageTurnActive &&
       (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight())) {
-    orientedMarginBottom +=
-        SETTINGS.screenMargin + statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin;
+    orientedMarginBottom += SETTINGS.readerBottomMargin() +
+                            (SETTINGS.readerRenderSpec(0, 0).linePitchPx ? 0 : statusBarHeight) +
+                            UITheme::getInstance().getMetrics().statusBarVerticalMargin;
   } else {
-    orientedMarginBottom += SETTINGS.screenMargin + statusBarHeight;
+    orientedMarginBottom +=
+        SETTINGS.readerBottomMargin() + (SETTINGS.readerRenderSpec(0, 0).linePitchPx ? 0 : statusBarHeight);
   }
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
@@ -1697,7 +1700,8 @@ void EpubReaderActivity::renderBook() {
   buildViewportWidth = viewportWidth;
   buildViewportHeight = viewportHeight;
 
-  const ReaderRenderSpec renderSpec = SETTINGS.readerRenderSpec(viewportWidth, viewportHeight);
+  const ReaderRenderSpec renderSpec =
+      SETTINGS.readerRenderSpec(viewportWidth, viewportHeight, epub->getLanguage().c_str());
 
   if (!section) {
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
@@ -2121,6 +2125,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   renderer.setDitherImagesInBw(!imageGrayscale);
   const bool pageHasImages = imageGrayscale && page->hasImages();
   const bool pageHasImagesNeedingDecode = pageHasImages && page->hasImagesNeedingDecode();
+  // A new chapter starts on a clean panel: full refresh clears the previous chapter's ghosting.
+  if (lastRenderedSpineIndex >= 0 && lastRenderedSpineIndex != currentSpineIndex) pagesUntilFullRefresh = 1;
+  lastRenderedSpineIndex = currentSpineIndex;
   const bool manualRefreshPending = forcedRefreshPending;
   forcedRefreshPending = false;
   const bool cleanImageBasePending = manualRefreshPending || pagesUntilFullRefresh <= 1;
@@ -2352,8 +2359,8 @@ int EpubReaderActivity::clippingAtPoint(const Page& page, const int x, const int
   int top, right, bottom, left;
   renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
   const int fontId = SETTINGS.getReaderFontId();
-  const uint32_t signature =
-      readerRenderSpecSignature(SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight));
+  const uint32_t signature = readerRenderSpecSignature(
+      SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight, epub->getLanguage().c_str()));
   uint16_t wordIndex = 0;
   for (const auto& element : page.elements) {
     if (element->getTag() != TAG_PageLine) continue;
@@ -2368,8 +2375,8 @@ int EpubReaderActivity::clippingAtPoint(const Page& page, const int x, const int
                                                  block->getBlockStyle().characterSpacing);
       if (width <= 0) continue;
       const uint16_t index = wordIndex++;
-      const Rect rect =
-          clippingWordRect(renderer, fontId, line, i, top + SETTINGS.screenMargin, left + SETTINGS.screenMargin, width);
+      const Rect rect = clippingWordRect(renderer, fontId, line, i, top + SETTINGS.readerTopMargin(),
+                                         left + SETTINGS.readerSideMargin(), width);
       if (x < rect.x || x >= rect.x + rect.width || y < rect.y || y >= rect.y + rect.height) continue;
       const auto range = block->wordSourceRange(i);
       for (size_t j = 0; j < CLIPPINGS.clippingCount(); ++j) {
@@ -2397,8 +2404,8 @@ void EpubReaderActivity::drawClippingHighlights(const Page& page, const int font
   const auto started = millis();
   size_t highlightedWords = 0;
   const uint16_t currentPage = static_cast<uint16_t>(section->currentPage);
-  const uint32_t layoutSignature =
-      readerRenderSpecSignature(SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight));
+  const uint32_t layoutSignature = readerRenderSpecSignature(
+      SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight, epub->getLanguage().c_str()));
   const auto isHighlighted = [&](const uint16_t wordIndex, const TextBlock::SourceRange range) {
     // ponytail: scan at most 256 C3 / 1024 S3 clippings per word; index by chapter if this becomes slow.
     for (size_t index = 0; index < CLIPPINGS.clippingCount(); ++index) {

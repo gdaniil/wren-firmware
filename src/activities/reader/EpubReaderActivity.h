@@ -25,6 +25,8 @@ class EpubReaderActivity final : public ReaderActivity {
   std::unique_ptr<Epub::SyncMetadata> vocabularyMetadata;
   std::unique_ptr<Section> section = nullptr;
   int currentSpineIndex = 0;
+  // Spine of the last page drawn; a change forces a full refresh (Wren refresh policy).
+  int lastRenderedSpineIndex = -1;
   int nextPageNumber = 0;
   std::optional<uint16_t> pendingPageJump;
   std::string pendingAnchor;

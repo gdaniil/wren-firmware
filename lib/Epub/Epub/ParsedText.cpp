@@ -760,6 +760,13 @@ int ParsedText::resolveFirstLineIndent(const bool isFirstLine, const GfxRenderer
   if (firstLineConsumed || !isFirstLine || !isNaturalAlign) {
     return 0;
   }
+  if (wrenSpec.linePitchPx > 0) {
+    if (wrenSpec.fontEmHundredths > 0) return (wrenSpec.fontEmHundredths * wrenSpec.paragraphIndentEm + 5000) / 10000;
+    const auto& fonts = renderer.getFontMap();
+    const auto font = fonts.find(fontId);
+    return font == fonts.end() ? 0
+                               : static_cast<int>(font->second.getSizeInPixels() * wrenSpec.paragraphIndentEm / 100);
+  }
   if (blockStyle.textIndentDefined && blockStyle.textIndent < 0) return blockStyle.textIndent;
   if (paragraphIndentSpaces == 0) return 0;
   return scaleSpace(renderer.getSpaceWidth(fontId, EpdFontFamily::REGULAR), wordSpacingPercent) * paragraphIndentSpaces;
@@ -773,6 +780,7 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   if (words.empty() || maxLines == 0 || (stopRequested && *stopRequested)) {
     return;
   }
+  if (!preprocessWrenText()) return;
   // Stamped here rather than at construction: the parser replaces blockStyle as CSS resolves.
   blockStyle.characterSpacing = characterSpacing;
   this->wordSpacingPercent = wordSpacingPercent;
@@ -847,13 +855,15 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   auto wordWidths = calculateWordWidths(renderer, fontId);
 
   std::vector<size_t> lineBreakIndices;
-  if (hyphenationEnabled || maxLines != SIZE_MAX) {
+  if ((wrenSpec.linePitchPx > 0 && (wrenLanguage == wren::TextLanguage::None || wrenSpec.hyphenationZone > 0)) ||
+      hyphenationEnabled || maxLines != SIZE_MAX) {
     // Bounded layout must leave words beyond the emitted lines unsplit for a later width.
     lineBreakIndices = computeHyphenatedLineBreaks(renderer, fontId, pageWidth, wordWidths, wordContinues,
                                                    wordNoSpaceBefore, maxLines);
   } else {
     lineBreakIndices = computeLineBreaks(renderer, fontId, pageWidth, wordWidths, wordContinues, wordNoSpaceBefore);
   }
+  if (wrenSpec.linePitchPx > 0 && wrenLanguage != wren::TextLanguage::None) wrenProcessedWords = words.size();
   const bool allLinesComputed = lineBreakIndices.back() == words.size();
   const size_t lineCount = lineBreakIndices.size() - (!includeLastLine && allLinesComputed ? 1 : 0);
 
@@ -861,6 +871,11 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
   for (size_t i = 0; i < lineCount; ++i) {
     if (stopRequested && *stopRequested) return;
     linesAfterCurrent = endIsKnown ? static_cast<int>(lineCount - 1 - i) : -1;
+    if (wrenSpec.linePitchPx > 0) {
+      const auto end = lineBreakIndices[i];
+      const bool hyphen = end > 0 && (wordStyles[end - 1] & TextBlock::DISCRETIONARY_HYPHEN_FLAG);
+      consecutiveHyphens = hyphen ? static_cast<uint8_t>(std::min<int>(255, consecutiveHyphens + 1)) : 0;
+    }
     extractLine(i, pageWidth, wordWidths, wordContinues, wordNoSpaceBefore, lineBreakIndices, processLine, renderer,
                 fontId);
   }
@@ -875,6 +890,7 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
     for (size_t i = 0; i < consumed; ++i) {
       wordStore.release(words[i]);  // retires arena chunks as lines are consumed
     }
+    wrenProcessedWords -= std::min(wrenProcessedWords, consumed);
     words.erase(words.begin(), words.begin() + consumed);
     wordStyles.erase(wordStyles.begin(), wordStyles.begin() + consumed);
     wordContinues.erase(wordContinues.begin(), wordContinues.begin() + consumed);
@@ -1176,7 +1192,9 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
       } else {
         const int remainingSpace = effectivePageWidth - currlen;
         // Use long long for the square to prevent overflow
-        const long long cost_ll = static_cast<long long>(remainingSpace) * remainingSpace + dp[j + 1];
+        const long long cost_ll =
+            static_cast<long long>(remainingSpace) * remainingSpace + dp[j + 1] +
+            (wrenSpec.linePitchPx > 0 ? wren::shortWordPenalty(wordAt(j), wrenLanguage, wrenSpec.fontEmHundredths) : 0);
 
         if (cost_ll > MAX_COST) {
           cost = MAX_COST;
@@ -1196,10 +1214,14 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     // Handle oversized word: if no valid configuration found, force single-word line
     // This prevents cascade failure where one oversized word breaks all preceding words
     if (dp[i] == MAX_COST) {
-      ans[i] = i;  // Just this word on its own line
+      size_t end = i + 1;
+      while (wrenSpec.linePitchPx > 0 && wrenLanguage != wren::TextLanguage::None && end < totalWordCount &&
+             !TokenBoundary::allowsBreak(continuesVec[end], noSpaceBeforeVec[end]))
+        ++end;
+      ans[i] = end - 1;  // An oversized no-break group overflows as a whole.
       // Inherit cost from next word to allow subsequent words to find valid configurations
       if (i + 1 < static_cast<int>(totalWordCount)) {
-        dp[i] = dp[i + 1];
+        dp[i] = end < totalWordCount ? dp[end] : 0;
       } else {
         dp[i] = 0;
       }
@@ -1226,6 +1248,22 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
   return lineBreakIndices;
 }
 
+unsigned ParsedText::wrenLineSlots(size_t start, size_t end, const GfxRenderer& renderer, int fontId) const {
+  if (wrenSpec.linePitchPx == 0) return 1;
+  bool ruby = false;
+  int ascent = renderer.getFontAscenderSize(fontId);
+  const int baseAscent = ascent;
+  int height = renderer.getLineHeight(fontId);
+  for (size_t i = start; i < end; ++i) {
+    ruby = ruby || (i < rubyTexts.size() && !rubyTexts[i].empty());
+    const int wordFont = wordFontId(i, fontId);
+    ascent = std::max(ascent, renderer.getFontAscenderSize(wordFont));
+  }
+  if (!ruby) return 1;
+  height += ascent - baseAscent + ascent / 2;
+  return std::max(1, (height + wrenSpec.linePitchPx - 1) / wrenSpec.linePitchPx);
+}
+
 // Builds break indices while opportunistically splitting the word that would overflow the current line.
 std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& renderer, const int fontId,
                                                             const int pageWidth, std::vector<uint16_t>& wordWidths,
@@ -1237,8 +1275,11 @@ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& r
   std::vector<size_t> lineBreakIndices;
   size_t currentIndex = 0;
   bool isFirstLine = !firstLineConsumed;
+  uint8_t hyphens = consecutiveHyphens;
+  unsigned slotsLeft = wrenFirstPageLines;
 
   while (currentIndex < wordWidths.size() && lineBreakIndices.size() < maxLines) {
+    bool insertedHyphen = false;
     const size_t lineStart = currentIndex;
     size_t lastFittingBreak = lineStart;
     int lineWidth = calculateRubyExtraStartOffset(lineStart, wordWidths.size(), renderer, fontId);
@@ -1282,10 +1323,19 @@ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& r
       const int availableWidth = effectivePageWidth - lineWidth - spacing;
       const bool allowFallbackBreaks = isFirstWord;  // Only for first word on line
 
-      if (lineWidth + candidateWidth > effectivePageWidth && availableWidth > 0 &&
-          (hyphenationEnabled || isFirstWord) &&
+      const unsigned slots = wrenLineSlots(lineStart, currentIndex + 1, renderer, fontId);
+      const unsigned availableSlots = slots > slotsLeft ? wrenFullPageLines : slotsLeft;
+      const bool wrenAllowsHyphen =
+          wrenSpec.linePitchPx == 0 ||
+          ((wrenSpec.hyphenationZone == 0 ||
+            (lineWidth + (isFirstLine ? firstLineIndent : 0)) * 100 < pageWidth * wrenSpec.hyphenationZone) &&
+           (wrenSpec.hyphenationMaxConsecutive == 0 || hyphens < wrenSpec.hyphenationMaxConsecutive) &&
+           lineBreakIndices.size() + 1 < maxLines && (wrenFullPageLines == 0 || slots < availableSlots));
+      if (availableWidth > 0 && wrenAllowsHyphen &&
+          (hyphenationEnabled || (isFirstWord && wrenSpec.linePitchPx == 0)) &&
           hyphenateWordAtIndex(currentIndex, availableWidth, renderer, fontId, wordWidths, allowFallbackBreaks)) {
         // Prefix now fits; append it to this line and move to next line
+        insertedHyphen = (wordStyles[currentIndex] & TextBlock::DISCRETIONARY_HYPHEN_FLAG) != 0;
         ++currentIndex;
         lastFittingBreak = currentIndex;
         break;
@@ -1307,6 +1357,28 @@ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& r
       --currentIndex;
     }
 
+    if (wrenSpec.linePitchPx > 0 && wrenLanguage != wren::TextLanguage::None && currentIndex == lineStart + 1) {
+      while (currentIndex < words.size() &&
+             !TokenBoundary::allowsBreak(continuesVec[currentIndex], noSpaceBeforeVec[currentIndex]))
+        ++currentIndex;
+    }
+
+    // Soft preference only: leave a nonempty line and move a complete short word
+    // when it fits on the next line. The paragraph's last line is exempt.
+    if (wrenSpec.linePitchPx > 0 && currentIndex > lineStart + 1 && currentIndex < words.size() &&
+        wren::shortWordPenalty(wordAt(currentIndex - 1), wrenLanguage, wrenSpec.fontEmHundredths) > 0 &&
+        !continuesVec[currentIndex - 1] && !noSpaceBeforeVec[currentIndex - 1] &&
+        wordWidths[currentIndex - 1] <= pageWidth) {
+      --currentIndex;
+      insertedHyphen = false;
+    }
+
+    if (wrenFullPageLines > 0) {
+      const unsigned slots = wrenLineSlots(lineStart, currentIndex, renderer, fontId);
+      if (slots > slotsLeft) slotsLeft = wrenFullPageLines;
+      slotsLeft -= std::min(slots, slotsLeft);
+    }
+    hyphens = insertedHyphen ? static_cast<uint8_t>(std::min<int>(255, hyphens + 1)) : 0;
     lineBreakIndices.push_back(currentIndex);
     isFirstLine = false;
   }
@@ -1352,6 +1424,18 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
       continue;
     }
 
+    if (wrenSpec.linePitchPx > 0 && info.requiresInsertedHyphen) {
+      unsigned left = 0, right = 0;
+      const auto* cursor = reinterpret_cast<const unsigned char*>(word.data());
+      while (*cursor) {
+        const size_t position = cursor - reinterpret_cast<const unsigned char*>(word.data());
+        const auto cp = utf8NextCodepoint(&cursor);
+        if (isAlphabetic(cp)) (position < offset ? left : right)++;
+      }
+      if (left + right < wrenSpec.hyphenationMinWordLetters || left < wrenSpec.hyphenationMinLeft ||
+          right < wrenSpec.hyphenationMinRight)
+        continue;
+    }
     const bool needsHyphen = info.requiresInsertedHyphen;
     const int prefixWidth = measureFocusWordWidth(renderer, wordFontId(wordIndex, fontId), word.substr(0, offset),
                                                   style, focusBoundaryBefore(focusBoundary, offset),

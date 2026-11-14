@@ -90,6 +90,26 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 77
+
+Keeps the version 76 binary structure and rebuilds completed and partial section
+caches for Wren language preprocessing (ru/uk/en): punctuation, no-break groups,
+and short-word line breaking. Stored source ranges still use the original EPUB
+codepoint positions, including contracted ellipses and double hyphens. Clipping
+layout signatures use version 4 so old page-local word ordinals are not reused.
+Book metadata and saved progress are kept.
+
+### Version 76
+
+Adds Wren layout overrides before the page count: four uint16 values (font em in hundredths of a pixel, line pitch
+in pixels, paragraph indent in hundredths of an em, paragraph spacing in
+hundredths of a line), then five uint8 values (hyphenation zone percent, minimum
+word letters, minimum left/right letters, maximum consecutive hyphenated lines).
+Zero values retain upstream layout. Completed and partial caches are rebuilt;
+the partial version remains derived from the final version. Progress is kept.
+Clipping layout signatures use version 3 and include these overrides and the
+space-based paragraph indent.
+
 ### Version 74
 
 Version 74 keeps the binary layout and rebuilds completed and partial sections.

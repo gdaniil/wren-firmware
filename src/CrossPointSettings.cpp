@@ -1,6 +1,7 @@
 #include "CrossPointSettings.h"
 
 #include <BlePageTurnerJson.h>
+#include <Epub/WrenLayout.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
@@ -18,6 +19,9 @@
 #include "fontIds.h"
 #include "util/ParagraphIndentMigration.h"
 #include "util/PluginLocations.h"
+#include "wren/typography/ReaderFontEm.h"
+#include "wren/typography/ReaderTypography.h"
+#include "wren/typography/ReaderTypographyBoard.h"
 
 namespace {
 
@@ -121,6 +125,14 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
     doc["keyboardLayouts"] = keyboardLayouts;
   }
 
+  doc["paragraphAlignment"] = paragraphAlignment;
+  doc["wrenAlignmentExplicit"] = wrenAlignmentExplicit;
+  doc["wrenMode"] = wrenMode;
+  for (size_t i = 0; i < 3; ++i) {
+    doc["wrenStep"][i] = wrenStep[i];
+    doc["wrenFont"][i] = wrenFont[i];
+  }
+
   bleturner::writeJson(ble, doc);
 }
 
@@ -191,6 +203,21 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     }
   };
   forEachBaseSetting(visit);
+
+  // Missing keys retain the defaults used for existing installations.
+  const auto loadWrenValue = [&](JsonVariantConst value, uint8_t& target, uint8_t limit) {
+    if (value.isNull()) return;
+    if (value.is<int>() && value.as<int>() >= 0 && value.as<int>() < limit) {
+      target = static_cast<uint8_t>(value.as<int>());
+    } else {
+      needsResave = true;
+    }
+  };
+  loadWrenValue(doc["wrenMode"], wrenMode, 3);
+  for (size_t i = 0; i < 3; ++i) {
+    loadWrenValue(doc["wrenStep"][i], wrenStep[i], 5);
+    loadWrenValue(doc["wrenFont"][i], wrenFont[i], 3);
+  }
 
   // Keep landscape swapping opt-in when loading older settings.
   if (doc["sideButtonFollowOrientation"].isNull()) {
@@ -282,6 +309,9 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   }
 
   // SD card font family name — not in SettingsList, load manually
+  paragraphAlignment = doc["paragraphAlignment"] | static_cast<uint8_t>(JUSTIFIED);
+  if (paragraphAlignment > 4) paragraphAlignment = JUSTIFIED;
+  wrenAlignmentExplicit = doc["wrenAlignmentExplicit"] | false;
   const char* sfn = doc["sdFontFamilyName"] | "";
   strncpy(sdFontFamilyName, sfn, sizeof(sdFontFamilyName) - 1);
   sdFontFamilyName[sizeof(sdFontFamilyName) - 1] = '\0';
@@ -338,8 +368,8 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   return spec;
 }
 
-ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWidth,
-                                                      const uint16_t viewportHeight) const {
+ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWidth, const uint16_t viewportHeight,
+                                                      const char* bookLanguage) const {
   ReaderRenderSpec spec;
   spec.fontId = getReaderFontId();
   spec.lineCompression = getReaderLineCompression();
@@ -355,9 +385,48 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
   // Same layout as Display, so switching between them keeps the section cache.
   spec.imageRendering = imageRendering == IMAGES_DISPLAY_BW ? static_cast<uint8_t>(IMAGES_DISPLAY) : imageRendering;
   spec.focusReadingEnabled = focusReadingEnabled != 0;
+  const auto mode = static_cast<wren::Mode>(wrenMode);
+  const auto font = static_cast<wren::Font>(wrenFont[wrenMode]);
+  const auto type = wren::resolve(wren::activeBoardPpi(), mode, wrenStep[wrenMode], font,
+                                  wren::isEnglishLanguage(bookLanguage) ? "en" : bookLanguage);
+  const int wrenFontId =
+      sdFontIdResolver ? sdFontIdResolver(sdFontResolverCtx, wren::fontFamily(font), type.xHeightPx) : 0;
+  if (wrenFontId != 0) {
+    spec.fontId = wrenFontId;
+    spec.linePitchPx = type.linePitchPx;
+    spec.fontEmHundredths = wren::fontEmHundredths(font, type.xHeightPx);
+    spec.paragraphIndentEm = static_cast<uint16_t>(type.indentEm * 100);
+    spec.paragraphSpaceLines = static_cast<uint16_t>(type.spaceLines * 100);
+    spec.hyphenationZone = static_cast<uint8_t>(type.hyphenation.zone * 100);
+    spec.hyphenationMinWordLetters = type.hyphenation.minWordLetters;
+    spec.hyphenationMinLeft = type.hyphenation.minLeft;
+    spec.hyphenationMinRight = type.hyphenation.minRight;
+    spec.hyphenationMaxConsecutive = type.hyphenation.maxConsecutive;
+    spec.paragraphAlignment =
+        (wrenAlignmentExplicit || paragraphAlignment != JUSTIFIED) ? paragraphAlignment : LEFT_ALIGN;
+    spec.hyphenationEnabled = spec.hyphenationEnabled || spec.paragraphAlignment == JUSTIFIED;
+  }
   return spec;
 }
 
+int CrossPointSettings::readerSideMargin() const {
+  if (!readerRenderSpec(0, 0).linePitchPx) return screenMargin;
+  return wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(wrenMode), wrenStep[wrenMode],
+                       static_cast<wren::Font>(wrenFont[wrenMode]), "")
+      .sideMarginPx;
+}
+int CrossPointSettings::readerTopMargin() const {
+  if (!readerRenderSpec(0, 0).linePitchPx) return screenMargin;
+  return wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(wrenMode), wrenStep[wrenMode],
+                       static_cast<wren::Font>(wrenFont[wrenMode]), "")
+      .topMarginPx;
+}
+int CrossPointSettings::readerBottomMargin() const {
+  if (!readerRenderSpec(0, 0).linePitchPx) return screenMargin;
+  return wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(wrenMode), wrenStep[wrenMode],
+                       static_cast<wren::Font>(wrenFont[wrenMode]), "")
+      .bottomMarginPx;
+}
 float CrossPointSettings::getReaderLineCompression() const {
   return LINE_SPACING_MULTIPLIERS[lineSpacing < LINE_COMPRESSION_COUNT ? lineSpacing : LINE_SPACING_120];
 }
@@ -397,6 +466,11 @@ void CrossPointSettings::clearSdFontFamily() {
 }
 
 int CrossPointSettings::getReaderFontId() const {
+  const auto font = static_cast<wren::Font>(wrenFont[wrenMode]);
+  const auto type =
+      wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(wrenMode), wrenStep[wrenMode], font, "");
+  const int wrenId = sdFontIdResolver ? sdFontIdResolver(sdFontResolverCtx, wren::fontFamily(font), type.xHeightPx) : 0;
+  if (wrenId != 0) return wrenId;
   // Check SD card font first
   if (sdFontFamilyName[0] != '\0' && sdFontIdResolver) {
     int id = sdFontIdResolver(sdFontResolverCtx, sdFontFamilyName, fontPointSize);

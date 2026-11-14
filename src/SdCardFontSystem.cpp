@@ -15,6 +15,8 @@
 #include "CrossPointSettings.h"
 #include "ReaderFontSizes.h"
 #include "fontIds.h"
+#include "wren/typography/ReaderTypography.h"
+#include "wren/typography/ReaderTypographyBoard.h"
 
 namespace {
 
@@ -143,6 +145,27 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
   }
 
   const char* wantedFamily = SETTINGS.sdFontFamilyName;
+  const auto wrenFont = static_cast<wren::Font>(SETTINGS.wrenFont[SETTINGS.wrenMode]);
+  const auto type = wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(SETTINGS.wrenMode),
+                                  SETTINGS.wrenStep[SETTINGS.wrenMode], wrenFont, "");
+  const char* wrenFamily = wren::fontFamily(wrenFont);
+  const auto* installed = registry_.findFamily(wrenFamily);
+  if (installed && !installed->vector && installed->hasSize(type.xHeightPx)) {
+    if (registryWasDirty || manager_.currentFamilyName() != wrenFamily ||
+        manager_.currentPointSize() != type.xHeightPx) {
+#if CROSSPOINT_VECTOR_FONTS
+      if (!ttfFamily_.empty()) unloadTtf(renderer);
+#endif
+      unloadCpfonts(renderer);
+      if (manager_.loadFamily(*installed, renderer, type.xHeightPx)) {
+        setupUiFallbacks(renderer);
+        return;
+      }
+      LOG_ERR("SDFS", "Failed to load Wren font: %s", wrenFamily);
+    } else {
+      return;
+    }
+  }
 
 #if CROSSPOINT_VECTOR_FONTS
   // Vector (.ttf/.otf) family selected: route through the FreeInkFont path and
@@ -386,7 +409,7 @@ bool SdCardFontSystem::loadCpfontVariant(const SdCardFontFamilyInfo& family, con
   return true;
 }
 
-int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*pointSize*/) const {
+int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t pointSize) const {
 #if CROSSPOINT_VECTOR_FONTS
   // A loaded vector (.ttf) family answers first — it isn't in the .cpfont manager.
   if (ttfFontId_ != 0 && familyName && ttfFamily_ == familyName) return ttfFontId_;
@@ -394,6 +417,7 @@ int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*pointSize*
   // The manager holds exactly one reader-size font, already selected for
   // SETTINGS.fontPointSize, so the size argument is implicit — always return
   // that font's ID. ensureLoaded() must have run for the current settings first.
+  if (familyName && strncmp(familyName, "Wren", 4) == 0 && manager_.currentPointSize() != pointSize) return 0;
   return manager_.getFontId(familyName);
 }
 

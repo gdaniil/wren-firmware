@@ -83,7 +83,7 @@ namespace {
 // v73: TrueType vector fonts load and advance .notdef for missing glyphs.
 // v74: TrueType advances defer rounding until pixel placement.
 // v75: Headings are not hyphenated.
-constexpr uint8_t SECTION_FILE_VERSION = 75;
+constexpr uint8_t SECTION_FILE_VERSION = 77;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects
@@ -101,11 +101,13 @@ constexpr uint8_t SECTION_FILE_INCOMPLETE_VERSION = 0;
 // only fails (noisily, via the block-decode error path) when a page is loaded.
 // Derived so the pairing can't be forgotten: 0xFE for v28, 0xFD for v29, ...
 constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xFE - (SECTION_FILE_VERSION - 28);
-constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
-                                 sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +
-                                 sizeof(uint8_t) + sizeof(bool) + sizeof(uint32_t) + sizeof(uint32_t) +
-                                 sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(int8_t) +
-                                 sizeof(uint8_t) + sizeof(uint8_t);
+// Wren fields: four uint16_t (em, pitch, indent, paragraph space) and five uint8_t hyphenation values.
+constexpr uint32_t WREN_HEADER_SIZE = 4 * sizeof(uint16_t) + 5 * sizeof(uint8_t);
+constexpr uint32_t HEADER_SIZE = WREN_HEADER_SIZE + sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) +
+                                 sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +
+                                 sizeof(bool) + sizeof(bool) + sizeof(uint8_t) + sizeof(bool) + sizeof(uint32_t) +
+                                 sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) +
+                                 sizeof(int8_t) + sizeof(uint8_t) + sizeof(uint8_t);
 }  // namespace
 
 // Out-of-line so the unique_ptr<ChapterHtmlSlimParser> in BuildContext can be
@@ -148,14 +150,14 @@ void Section::writeSectionFileHeader(const ReaderRenderSpec& spec) {
     LOG_DBG("SCT", "File not open for writing header");
     return;
   }
-  static_assert(HEADER_SIZE == sizeof(SECTION_FILE_VERSION) + sizeof(spec.fontId) + sizeof(spec.lineCompression) +
-                                   sizeof(spec.extraParagraphSpacing) + sizeof(spec.paragraphIndentSpaces) +
-                                   sizeof(spec.paragraphAlignment) + sizeof(spec.viewportWidth) +
-                                   sizeof(spec.viewportHeight) + sizeof(pageCount) + sizeof(spec.hyphenationEnabled) +
-                                   sizeof(spec.embeddedStyle) + sizeof(spec.imageRendering) +
-                                   sizeof(spec.focusReadingEnabled) + sizeof(spec.characterSpacing) +
-                                   sizeof(spec.wordSpacingPercent) + sizeof(uint32_t) + sizeof(uint32_t) +
-                                   sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t),
+  static_assert(HEADER_SIZE == WREN_HEADER_SIZE + sizeof(SECTION_FILE_VERSION) + sizeof(spec.fontId) +
+                                   sizeof(spec.lineCompression) + sizeof(spec.extraParagraphSpacing) +
+                                   sizeof(spec.paragraphIndentSpaces) + sizeof(spec.paragraphAlignment) +
+                                   sizeof(spec.viewportWidth) + sizeof(spec.viewportHeight) + sizeof(pageCount) +
+                                   sizeof(spec.hyphenationEnabled) + sizeof(spec.embeddedStyle) +
+                                   sizeof(spec.imageRendering) + sizeof(spec.focusReadingEnabled) +
+                                   sizeof(spec.characterSpacing) + sizeof(spec.wordSpacingPercent) + sizeof(uint32_t) +
+                                   sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t),
                 "Header size mismatch");
   // Written as the incomplete sentinel; finalizeBuild() patches it to
   // SECTION_FILE_VERSION as the last step, committing the file.
@@ -173,6 +175,15 @@ void Section::writeSectionFileHeader(const ReaderRenderSpec& spec) {
   serialization::writePod(file, spec.focusReadingEnabled);
   serialization::writePod(file, spec.characterSpacing);
   serialization::writePod(file, spec.wordSpacingPercent);
+  serialization::writePod(file, spec.fontEmHundredths);
+  serialization::writePod(file, spec.linePitchPx);
+  serialization::writePod(file, spec.paragraphIndentEm);
+  serialization::writePod(file, spec.paragraphSpaceLines);
+  serialization::writePod(file, spec.hyphenationZone);
+  serialization::writePod(file, spec.hyphenationMinWordLetters);
+  serialization::writePod(file, spec.hyphenationMinLeft);
+  serialization::writePod(file, spec.hyphenationMinRight);
+  serialization::writePod(file, spec.hyphenationMaxConsecutive);
   serialization::writePod(file, pageCount);  // Placeholder for page count (will be initially 0, patched later)
   serialization::writePod(file, static_cast<uint32_t>(0));  // Placeholder for LUT offset (patched later)
   serialization::writePod(file, static_cast<uint32_t>(0));  // Placeholder for anchor map offset (patched later)
@@ -226,8 +237,32 @@ bool Section::loadSectionFile(const ReaderRenderSpec& spec) {
     serialization::readPod(file, fileCharacterSpacing);
     serialization::readPod(file, fileWordSpacingPercent);
 
-    if (spec.fontId != fileFontId || spec.lineCompression != fileLineCompression ||
-        spec.extraParagraphSpacing != fileExtraParagraphSpacing ||
+    uint16_t fileFontEmHundredths;
+    serialization::readPod(file, fileFontEmHundredths);
+    uint16_t filelinePitchPx;
+    serialization::readPod(file, filelinePitchPx);
+    uint16_t fileparagraphIndentEm;
+    serialization::readPod(file, fileparagraphIndentEm);
+    uint16_t fileparagraphSpaceLines;
+    serialization::readPod(file, fileparagraphSpaceLines);
+    uint8_t filehyphenationZone;
+    serialization::readPod(file, filehyphenationZone);
+    uint8_t filehyphenationMinWordLetters;
+    serialization::readPod(file, filehyphenationMinWordLetters);
+    uint8_t filehyphenationMinLeft;
+    serialization::readPod(file, filehyphenationMinLeft);
+    uint8_t filehyphenationMinRight;
+    serialization::readPod(file, filehyphenationMinRight);
+    uint8_t filehyphenationMaxConsecutive;
+    serialization::readPod(file, filehyphenationMaxConsecutive);
+
+    if (spec.fontEmHundredths != fileFontEmHundredths || spec.linePitchPx != filelinePitchPx ||
+        spec.paragraphIndentEm != fileparagraphIndentEm || spec.paragraphSpaceLines != fileparagraphSpaceLines ||
+        spec.hyphenationZone != filehyphenationZone ||
+        spec.hyphenationMinWordLetters != filehyphenationMinWordLetters ||
+        spec.hyphenationMinLeft != filehyphenationMinLeft || spec.hyphenationMinRight != filehyphenationMinRight ||
+        spec.hyphenationMaxConsecutive != filehyphenationMaxConsecutive || spec.fontId != fileFontId ||
+        spec.lineCompression != fileLineCompression || spec.extraParagraphSpacing != fileExtraParagraphSpacing ||
         spec.paragraphIndentSpaces != fileParagraphIndentSpaces || spec.paragraphAlignment != fileParagraphAlignment ||
         spec.viewportWidth != fileViewportWidth || spec.viewportHeight != fileViewportHeight ||
         spec.hyphenationEnabled != fileHyphenationEnabled || spec.embeddedStyle != fileEmbeddedStyle ||
@@ -487,6 +522,7 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
 
   ctx->parser->setTextSpacing(spec.characterSpacing, spec.wordSpacingPercent);
   ctx->parser->setParagraphIndentSpaces(spec.paragraphIndentSpaces);
+  ctx->parser->setWrenTypography(spec, epub->getLanguage());
   Hyphenator::setPreferredLanguage(epub->getLanguage());
   build_ = std::move(ctx);
 

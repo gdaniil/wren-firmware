@@ -412,7 +412,7 @@ void TextSettingsActivity::confirmLayoutRow(int row) {
     case LayoutRow::Alignment:
       optionPopup_.show(StrId::STR_ALIGNMENT, ALIGNMENT_IDS, static_cast<int>(std::size(ALIGNMENT_IDS)),
                         SETTINGS.paragraphAlignment, [](int idx) {
-                          SETTINGS.paragraphAlignment = static_cast<uint8_t>(idx);
+                          SETTINGS.setParagraphAlignment(static_cast<uint8_t>(idx));
                           SETTINGS.saveToFile();
                         });
       requestUpdate();

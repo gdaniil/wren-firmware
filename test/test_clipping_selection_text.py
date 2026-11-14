@@ -262,8 +262,10 @@ struct BoardConfig { static bool isEegoA4() { return false; } };
 unsigned long millis() { return 0; }
 struct Settings {
   int screenMargin = 0;
+  int readerTopMargin() const { return screenMargin; }
+  int readerSideMargin() const { return screenMargin; }
   int getReaderFontId() const { return 0; }
-  ReaderRenderSpec readerRenderSpec(int width, int height) const {
+  ReaderRenderSpec readerRenderSpec(int width, int height, const char* = "") const {
     ReaderRenderSpec spec;
     spec.viewportWidth = width;
     spec.viewportHeight = height;
@@ -323,6 +325,8 @@ struct ClipSelectionActivity {
 };
 """ + build_text + extract_words + gap_draw + incremental_draw + selection_draw + r"""
 struct EpubReaderActivity {
+  struct Book { std::string getLanguage() const { return "en"; } } book;
+  Book* epub = &book;
   Renderer& renderer;
   explicit EpubReaderActivity(Renderer& renderer) : renderer(renderer) {}
   struct Section { int currentPage = 0, pageCount = 1; } sectionData;

@@ -147,6 +147,17 @@ bool isTableStructuralTag(const char* name) {
   return strcmp(name, "table") == 0 || strcmp(name, "tr") == 0 || strcmp(name, "td") == 0 || strcmp(name, "th") == 0;
 }
 
+void ChapterHtmlSlimParser::setWrenTypography(const ReaderRenderSpec& spec, const std::string& language) {
+  viewportHeight += wrenTopRemainder + wrenBottomOverhang;
+  wrenSpec = spec;
+  wrenBottomOverhang = spec.linePitchPx > 0 ? std::max(0, renderer.getLineHeight(fontId) - spec.linePitchPx) : 0;
+  const int usableHeight = std::max(0, viewportHeight - wrenBottomOverhang);
+  wrenTopRemainder = spec.linePitchPx > 0 ? usableHeight % spec.linePitchPx : 0;
+  viewportHeight = usableHeight - wrenTopRemainder;
+  wrenLanguage = wren::textLanguage(language.c_str());
+  wrenEnglish = wrenLanguage == wren::TextLanguage::English;
+}
+
 void ChapterHtmlSlimParser::applyDirectionToEntry(StyleStackEntry& entry, const CssStyle& css) {
   if (css.hasDirection()) {
     entry.hasDirection = true;
@@ -353,6 +364,11 @@ void ChapterHtmlSlimParser::emitCurrentPage() {
     if (box.top >= 0) box.continued = true;
     box.top = box.bottom = -1;
   }
+  if (wrenSpec.linePitchPx > 0 && currentPage) {
+    const int leftover = wrenTopRemainder;
+    for (auto& element : currentPage->elements) element->yPos += leftover;
+    for (auto& link : currentPage->links) link.y += leftover;
+  }
   completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex, currentPageVisibleOffset);
   recentLineCount = 0;
   keepWithNextLines = 0;
@@ -495,7 +511,9 @@ uint8_t ChapterHtmlSlimParser::dropCapLines(const CssStyle& style) {
 
 void ChapterHtmlSlimParser::armFirstLetterDropCap(const char* tagName, const std::string& classAttr,
                                                   const char* idAttr) {
-  if (!cssParser || !cssParser->hasFirstLetterRules() || tableDepth > 0 || dropCap.length > 0) return;
+  if (wrenSpec.linePitchPx > 0 || !cssParser || !cssParser->hasFirstLetterRules() || tableDepth > 0 ||
+      dropCap.length > 0)
+    return;
   const auto elementDepth = static_cast<size_t>(depth);
   const CssStyle firstLetter = cssParser->resolveStyle(tagName, classAttr, idAttr, cssAncestors.data(),
                                                        elementDepth <= MAX_CSS_ANCESTORS ? elementDepth : 0, true);
@@ -552,8 +570,8 @@ void ChapterHtmlSlimParser::layoutCurrentBlock(const bool includeLastLine) {
   const auto applyTopSpacing = [this, &topSpacingApplied]() {
     if (topSpacingApplied) return;
     const auto& style = currentTextBlock->getBlockStyle();
-    if (style.marginTop > 0) currentPageNextY += style.marginTop;
-    if (style.paddingTop > 0) currentPageNextY += style.paddingTop;
+    if (wrenSpec.linePitchPx == 0 && style.marginTop > 0) currentPageNextY += style.marginTop;
+    if (wrenSpec.linePitchPx == 0 && style.paddingTop > 0) currentPageNextY += style.paddingTop;
     topSpacingApplied = true;
   };
   const auto emitLine = [this, &applyTopSpacing](std::unique_ptr<TextBlock> textBlock, const uint32_t offset) {
@@ -568,8 +586,26 @@ void ChapterHtmlSlimParser::layoutCurrentBlock(const bool includeLastLine) {
     applyTopSpacing();
     layoutDropCapLines(layoutFontId, effectiveWidth, emitLine, includeLastLine);
   }
-  currentTextBlock->layoutAndExtractLines(renderer, layoutFontId, effectiveWidth, emitLine, includeLastLine,
-                                          characterSpacing, wordSpacingPercent, SIZE_MAX, &stopRequested);
+  if (wrenSpec.linePitchPx > 0) {
+    currentTextBlock->setWrenTypography(wrenSpec, wrenLanguage);
+    if (currentTextBlock->getBlockStyle().keepWithNext || (wrenEnglish && wrenAfterHeading))
+      currentTextBlock->suppressFirstLineIndent();
+    applyTopSpacing();
+    const int pitch = wrenSpec.linePitchPx;
+    currentPageNextY = static_cast<int16_t>(((currentPageNextY + pitch - 1) / pitch) * pitch);
+    if (currentPageNextY + pitch > viewportHeight) {
+      breakPageCarryingLines(0, 0, visibleTextOffset);
+      if (stopRequested) return;
+    }
+    currentTextBlock->setWrenPageLines(std::max(1, (viewportHeight - currentPageNextY) / pitch),
+                                       std::max(1, viewportHeight / pitch));
+    currentTextBlock->layoutAndExtractLines(renderer, layoutFontId, effectiveWidth, emitLine, includeLastLine,
+                                            characterSpacing, wordSpacingPercent, SIZE_MAX, &stopRequested);
+    wrenAfterHeading = currentTextBlock->getBlockStyle().keepWithNext;
+  } else {
+    currentTextBlock->layoutAndExtractLines(renderer, layoutFontId, effectiveWidth, emitLine, includeLastLine,
+                                            characterSpacing, wordSpacingPercent, SIZE_MAX, &stopRequested);
+  }
   layoutParagraph = nullptr;
 }
 
@@ -851,6 +887,7 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
     currentPageNextY = 0;
   }
 
+  if (wrenSpec.linePitchPx > 0) wrenAfterHeading = true;
   const int16_t lineHeight = static_cast<int16_t>(renderer.getLineHeight(fontId, lineCompression));
   const int16_t defaultVerticalSpacing = static_cast<int16_t>(lineHeight / 2);
   const int16_t topSpacing =
@@ -1265,7 +1302,8 @@ void ChapterHtmlSlimParser::finishTableRow() {
       if (lineIndex < tableCellLines[column].size()) {
         const TextBlock& line = *tableCellLines[column][lineIndex];
         const int lineFontId = line.blockFontId(fontId);
-        const int spacedHeight = renderer.getLineHeight(lineFontId, lineCompression);
+        const int spacedHeight =
+            wrenSpec.linePitchPx > 0 ? wrenSpec.linePitchPx : renderer.getLineHeight(lineFontId, lineCompression);
         const int height = spacedHeight + line.extraAscent(renderer, fontId) +
                            line.getRubyShift(renderer.getFontAscenderSize(lineFontId));
         rowLineHeight = std::max<int16_t>(rowLineHeight, static_cast<int16_t>(height));
@@ -1555,7 +1593,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
     self->currentTextBlock.reset();
     self->tableRowTextBytes = 0;
-    self->tableRowStacked = self->tableRowsSpannedRemaining > 0;
+    self->tableRowStacked = self->wrenSpec.linePitchPx > 0 || self->tableRowsSpannedRemaining > 0;
     self->tableRowRtl = cssStyle.hasDirection() && cssStyle.direction == CssTextDirection::Rtl;
     if (self->tableRowsSpannedRemaining != UINT16_MAX && self->tableRowsSpannedRemaining > 0) {
       self->tableRowsSpannedRemaining--;
@@ -2255,7 +2293,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     // A floated or oversized span opening a paragraph is a hand-made drop cap.
     if (self->tableDepth == 0 && self->dropCap.length == 0 && self->dropCap.spanDepth < 0 &&
         self->partWordBufferIndex == 0 && self->currentTextBlock && self->currentTextBlock->isEmpty()) {
-      const uint8_t lines = dropCapLines(cssStyle);
+      const uint8_t lines = self->wrenSpec.linePitchPx > 0 ? 0 : dropCapLines(cssStyle);
       if (lines > 0) {
         self->dropCap.spanDepth = self->depth;
         self->dropCap.lines = lines;
@@ -3045,9 +3083,10 @@ int ChapterHtmlSlimParser::fontIdForScale(const float scale) const {
 
 int ChapterHtmlSlimParser::prepareBlockFont(ParsedText& text, const float scale) {
   BlockStyle& blockStyle = text.getBlockStyle();
-  const int layoutFontId = fontIdForScale(scale);
+  const int layoutFontId = fontIdForScale(wrenSpec.linePitchPx > 0 ? std::min(scale, 1.0f) : scale);
   for (uint8_t slot = 1; slot < text.sizeSlotsInUse(); ++slot) {
-    text.setSizeSlotFontId(slot, fontIdForScale(text.sizeSlotScale(slot)));
+    text.setSizeSlotFontId(slot, fontIdForScale(wrenSpec.linePitchPx > 0 ? std::min(text.sizeSlotScale(slot), 1.0f)
+                                                                         : text.sizeSlotScale(slot)));
   }
   blockStyle.fontId = layoutFontId == fontId ? 0 : layoutFontId;
   return layoutFontId;
@@ -3161,13 +3200,18 @@ void ChapterHtmlSlimParser::breakPageCarryingLines(const size_t carry, const siz
 void ChapterHtmlSlimParser::addLineToPage(std::unique_ptr<TextBlock> line, const uint32_t visibleOffset) {
   if (stopRequested) return;
   const int lineFontId = line->blockFontId(fontId);
-  const int rubyShift = line->getRubyShift(renderer.getFontAscenderSize(lineFontId));
-  const int spacedHeight = renderer.getLineHeight(lineFontId, lineCompression);
-  // Taller inline words push the shared baseline down.
+  const int rubyShift = line->getRubyShift(renderer.getFontAscenderSize(lineFontId) +
+                                           (wrenSpec.linePitchPx > 0 ? line->extraAscent(renderer, fontId) : 0));
+  const int spacedHeight = wrenSpec.linePitchPx > 0 ? renderer.getLineHeight(lineFontId)
+                                                    : renderer.getLineHeight(lineFontId, lineCompression);
   const int baseLineHeight = spacedHeight + line->extraAscent(renderer, fontId);
-  const int lineHeight = baseLineHeight + rubyShift;
-  // Spacing can be shorter than the font's own line height; fit and frame the full glyphs.
-  const int contentHeight = lineHeight + std::max(0, renderer.getLineHeight(lineFontId) - spacedHeight);
+  const int glyphHeight = baseLineHeight + rubyShift + std::max(0, renderer.getLineHeight(lineFontId) - spacedHeight);
+  const int lineHeight =
+      wrenSpec.linePitchPx > 0
+          ? (line->hasRuby() ? ((glyphHeight + wrenSpec.linePitchPx - 1) / wrenSpec.linePitchPx) * wrenSpec.linePitchPx
+                             : wrenSpec.linePitchPx)
+          : baseLineHeight + rubyShift;
+  const int contentHeight = wrenSpec.linePitchPx > 0 ? lineHeight : glyphHeight;
 
   if (!currentPage) {
     currentPage.reset(new Page());
@@ -3177,7 +3221,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::unique_ptr<TextBlock> line, const
 
   if (currentPageNextY + contentHeight > viewportHeight) {
     size_t paragraphLines = 0;
-    const size_t carry = linesToCarry(paragraphLines);
+    const size_t carry = wrenSpec.linePitchPx > 0 ? 0 : linesToCarry(paragraphLines);
     breakPageCarryingLines(carry, paragraphLines, visibleOffset);
     if (stopRequested) return;
   }
@@ -3276,6 +3320,10 @@ void ChapterHtmlSlimParser::makePages(const bool includeLastLine, const bool par
 
     if (!paragraphEnd) return;
 
+    if (wrenSpec.linePitchPx > 0) {
+      currentPageNextY += ((wrenSpec.paragraphSpaceLines + 50) / 100) * wrenSpec.linePitchPx;
+      return;
+    }
     // Apply bottom spacing after the paragraph (stored in pixels)
     if (blockStyle.marginBottom > 0) {
       currentPageNextY += blockStyle.marginBottom;
