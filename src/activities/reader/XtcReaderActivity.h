@@ -35,6 +35,7 @@ class XtcReaderActivity final : public ReaderActivity {
   bool skipPages(int amount) override;
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;
+  void restartFromBeginning() override;
 
   ScreenshotInfo getScreenshotInfo() const override;
 };

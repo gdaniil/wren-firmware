@@ -8,9 +8,9 @@
 namespace wren {
 namespace {
 constexpr ModeSpec MODES[] = {
-    {{1.1f, 1.2f, 1.3f, 1.4f, 1.5f}, 1, Font::Literata, 2.5f, 1.2f, 1, 0, .21f, 1, {.75f, 8, 2, 2, 2}},
-    {{1.4f, 1.5f, 1.7f, 1.9f, 2.15f}, 0, Font::Literata, 2.7f, 1.6f, 1, 0, .20f, 1, {.75f, 8, 2, 2, 2}},
-    {{2.4f, 2.7f, 3.1f, 3.5f, 4.0f}, 0, Font::GolosText, 2.9f, 1.2f, 0, .5f, .23f, 2, {.60f, 8, 2, 2, 2}},
+    {{1.1f, 1.2f, 1.3f, 1.4f, 1.5f}, 2, Font::Literata, 2.5f, 1.2f, 1, 0, .21f, 1, {.75f, 8, 2, 2, 2}},
+    {{1.4f, 1.5f, 1.7f, 1.9f, 2.15f}, 1, Font::Literata, 2.7f, 1.6f, 1, 0, .20f, 1, {.75f, 8, 2, 2, 2}},
+    {{2.1f, 2.4f, 2.7f, 3.1f, 3.5f}, 0, Font::GolosText, 2.5f, 1.2f, 0, .5f, .23f, 2, {.60f, 8, 2, 2, 2}},
 };
 }  // namespace
 int mmToPx(float mm, int ppi) { return static_cast<int>(std::round(mm * ppi / 25.4f)); }
@@ -33,13 +33,11 @@ ResolvedTypography resolve(int ppi, Mode mode, uint8_t step, Font font, const ch
   for (const auto& entry : WREN_FONT_METRICS[f]) {
     if (entry.xHeightPx == xh) metrics = &entry;
   }
-  // Large mode doubles the fixed vertical margins with its doubled status size.
-  const int scale = m == 2 ? 2 : 1;
   return {xh,
           static_cast<int>(std::round(s.lineStepXh * xh)),
           mmToPx(s.sideMarginMm, ppi),
-          48 * scale,
-          24 * scale,
+          48,
+          24,
           mmToPx(s.statusXHeightMm, ppi),
           s.indentEm,
           s.spaceLines,

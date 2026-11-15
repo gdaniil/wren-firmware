@@ -92,6 +92,7 @@ void WrenFilesActivity::up() {
     finish();
     return;
   }
+  RenderLock lock;
   const auto slash = path.find_last_of('/');
   path.resize(slash == 0 ? 1 : slash);
   selected = 0;
@@ -103,7 +104,6 @@ void WrenFilesActivity::up() {
 void WrenFilesActivity::openSelected() {
   if (count() == 0) return;
   if (path != "/" && selected == 0) {
-    RenderLock lock;
     up();
     return;
   }
@@ -131,7 +131,7 @@ void WrenFilesActivity::openSelected() {
     }
     startActivityForResult(std::move(child), [this](const ActivityResult&) {
       RenderLock lock;
-      fullRefresh = true;
+      cleanRefresh = true;
     });
   }
 }
@@ -152,16 +152,13 @@ void WrenFilesActivity::deleteSelected() {
       loadFiles();
       selected = wren::files::clampSelection(selected, count());
     }
-    fullRefresh = true;
+    cleanRefresh = true;
     updateWindow();
   });
 }
 void WrenFilesActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
-  updateWindow();
   if (isFile() && mappedInput.wasLongPressed(B::Back, 1000)) {
-    lock.unlock();
     deleteSelected();
     return;
   }
@@ -172,7 +169,11 @@ void WrenFilesActivity::loop() {
     return;
   }
   if (wren::setup::swipeSelection(mappedInput, selected, count(), visibleRows())) {
-    updateWindow();
+    if (wren::files::scrollStart(start, selected, visibleRows(), count()) != cachedStart ||
+        cachedVisible != visibleRows()) {
+      RenderLock lock;
+      updateWindow();
+    }
     requestUpdate();
     return;
   }
@@ -186,19 +187,21 @@ void WrenFilesActivity::loop() {
       y < ROWS_TOP + static_cast<int>(values.size()) * ROW_HEIGHT) {
     selected = start + (y - ROWS_TOP) / ROW_HEIGHT;
     if (isFile()) {
-      lock.unlock();
       deleteSelected();
       return;
     }
   }
   if (mappedInput.wasReleased(B::Confirm) || touch == MappedInputManager::RowTouch::Tap) {
-    lock.unlock();
     openSelected();
     return;
   }
   const auto move = [this](int delta) {
     if (count()) selected = (selected + delta + count()) % count();
-    updateWindow();
+    if (wren::files::scrollStart(start, selected, visibleRows(), count()) != cachedStart ||
+        cachedVisible != visibleRows()) {
+      RenderLock lock;
+      updateWindow();
+    }
     requestUpdate();
   };
   navigator.onPressAndContinuous({B::Left}, [&move] { move(-1); });
@@ -268,6 +271,6 @@ void WrenFilesActivity::drawPage() {
 }
 void WrenFilesActivity::render(RenderLock&&) {
   drawPage();
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }

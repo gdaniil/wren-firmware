@@ -22,6 +22,7 @@
 
 #include "BookInfo.h"
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "HomeState.h"
 #include "components/themes/BaseTheme.h"
 #include "util/BookCacheUtils.h"
@@ -33,6 +34,7 @@
 #include "wren/ui/WrenLayout.h"
 
 namespace {
+std::string pendingDeletePath;
 using library::SortOrder;
 constexpr auto ORDER = SortOrder::RecentDesc;
 constexpr uint16_t NONE = 0xFFFF;
@@ -102,10 +104,27 @@ int savedChapter(const std::string& path) {
 WrenHomeActivity::WrenHomeActivity(GfxRenderer& r, MappedInputManager& input, bool clean)
     : Activity("Home", r, input), cleanInitialRefresh(clean) {}
 
+void WrenHomeActivity::requestDeleteOnEnter(std::string path) { pendingDeletePath = std::move(path); }
+
 void WrenHomeActivity::onEnter() {
   // The render task must not read the index or the recents before they are in place.
   RenderLock lock(*this);
   Activity::onEnter();
+  if (!pendingDeletePath.empty()) {
+    std::string path = std::move(pendingDeletePath);
+    pendingDeletePath.clear();
+    index.close();
+    if (!wren::ui::deleteBookFromCard(path)) {
+      LOG_ERR("WHOME", "Failed to delete %s", path.c_str());
+    } else if (APP_STATE.openEpubPath == path) {
+      APP_STATE.openEpubPath.clear();
+      APP_STATE.saveToFile();
+    }
+    library::BuildStats stats;
+    if (!library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0)) {
+      LOG_ERR("WHOME", "index build failed");
+    }
+  }
   if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
   openIndex();
   resolveRecents();
@@ -153,9 +172,7 @@ void WrenHomeActivity::resolveRecents() {
   for (int i = 0; i < count; ++i) {
     const std::string& path = books[i].path;
     ids[i].pathHash = library::clixPathHash(path.data(), path.size());
-    ids[i].fileSize = 0;  // 0 = match by path hash only
-    HalFile file;
-    if (Storage.openFileForRead("WHOME", path.c_str(), file)) ids[i].fileSize = static_cast<uint32_t>(file.fileSize());
+    ids[i].fileSize = 0;  // Unknown size: check every record's path hash.
     asc[i] = NONE;
   }
   if (!index.recentRowsFor(ids, count, asc)) {
@@ -287,19 +304,36 @@ bool WrenHomeActivity::generateCover(Book& book, int height) {
 }
 
 // One cover per loop pass, in reading order of the screen, so the list stays responsive.
-bool WrenHomeActivity::generateOneCover() {
+bool WrenHomeActivity::generateOneCover(RenderLock& lock) {
   if (index.bookCount() == 0) return false;
-  if (cardVisible() && continueBook.cover == Cover::Pending) return generateCover(continueBook, CARD_COVER_H - 4);
-  const int count = listCount();
-  const int visible = visibleRows();
-  for (int i = 0; i < visible && start + i < count; ++i) {
-    const int slot = start + i - rowsFirst;
-    if (rowsFirst < 0 || slot < 0 || slot >= MAX_ROWS) continue;
-    if (rows[slot].ordinal != NONE && rows[slot].cover == Cover::Pending) {
-      return generateCover(rows[slot], ROW_COVER_H - 4);
+  Book* book = nullptr;
+  int height = ROW_COVER_H - 4;
+  if (cardVisible() && continueBook.cover == Cover::Pending) {
+    book = &continueBook;
+    height = CARD_COVER_H - 4;
+  } else {
+    const int count = listCount();
+    const int visible = visibleRows();
+    for (int i = 0; i < visible && start + i < count; ++i) {
+      const int slot = start + i - rowsFirst;
+      if (rowsFirst < 0 || slot < 0 || slot >= MAX_ROWS) continue;
+      if (rows[slot].ordinal != NONE && rows[slot].cover == Cover::Pending) {
+        book = &rows[slot];
+        break;
+      }
     }
   }
-  return false;
+  if (!book) return false;
+  // The render task skips frames while this book is borrowed for SD work.
+  generatingCover = true;
+  lock.unlock();
+  generateCover(*book, height);
+  {
+    RenderLock publish(*this);
+    generatingCover = false;
+    fullRedrawNeeded = true;
+  }
+  return true;
 }
 
 bool WrenHomeActivity::failed(const std::string& path) const {
@@ -333,6 +367,10 @@ int WrenHomeActivity::rowsTop() const {
   int y = CONTENT_TOP;
   if (cardVisible()) y += GAP + CARD_H;
   return y + GAP + SECTION_H;
+}
+
+int WrenHomeActivity::elementY(int element) const {
+  return element < 0 ? CONTENT_TOP + GAP : rowsTop() + (element - start) * ROW_H;
 }
 
 int WrenHomeActivity::visibleRows() const {
@@ -601,7 +639,7 @@ void WrenHomeActivity::drawPage() {
   } else {
     int y = CONTENT_TOP;
     if (cardVisible()) {
-      drawCard(y + GAP, focus < 0);
+      drawCard(elementY(-1), focus < 0);
       y += GAP + CARD_H;
     }
     y += GAP;
@@ -612,7 +650,7 @@ void WrenHomeActivity::drawPage() {
     start = wren::home::scrollStart(start, focus, visible, count);
     for (int i = 0; i < visible && start + i < count; ++i) {
       Book* book = rowBook(start + i);
-      if (book) drawRow(y, *book, focus == start + i);
+      if (book) drawRow(elementY(start + i), *book, focus == start + i);
       y += ROW_H;
     }
     if (!anyOpened && query.empty()) drawHelp(y);
@@ -622,15 +660,51 @@ void WrenHomeActivity::drawPage() {
   if (menuOpen) drawMenu();
 }
 void WrenHomeActivity::render(RenderLock&&) {
-  drawPage();
+  if (generatingCover) return;
+  const bool card = cardVisible();
+  const auto visible = [this, card](int element) {
+    return element == -1 ? card : element >= start && element < start + visibleRows() && element < listCount();
+  };
+  const bool partial = !firstPaint && !fullRedrawNeeded && !menuOpen && !paintedMenu &&
+                       paintedLoans == renderer.frameBufferLoanCount() && paintedVisit == activityManager.visit() &&
+                       paintedOrientation == static_cast<int>(renderer.getOrientation()) && paintedStart == start &&
+                       paintedCard == card && paintedFocus != focus && visible(paintedFocus) && visible(focus);
+  if (partial) {
+    renderer.fillRect(0, 0, renderer.getScreenWidth(), STATUS_H, false);
+    char clock[16] = {};
+    halClock.formatTime(clock, sizeof(clock), false);
+    wren::ui::drawMenuStatusBar(renderer, clock, powerManager.getBatteryPercentage());
+    for (int element : {paintedFocus, focus}) {
+      const int y = elementY(element);
+      if (element < 0) {
+        renderer.fillRect(20, y, renderer.getScreenWidth() - 40, CARD_H, false);
+        drawCard(y, element == focus);
+      } else {
+        renderer.fillRect(0, y, renderer.getScreenWidth(), ROW_H, false);
+        if (Book* book = rowBook(element)) drawRow(y, *book, element == focus);
+      }
+    }
+    wren::ui::drawEdgeTabs(renderer, true, true);
+  } else {
+    drawPage();
+  }
   renderer.displayBuffer(firstPaint && cleanInitialRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   firstPaint = false;
   painted = true;
+  fullRedrawNeeded = false;
+  paintedFocus = focus;
+  paintedStart = start;
+  paintedMenu = menuOpen;
+  paintedCard = cardVisible();
+  paintedLoans = renderer.frameBufferLoanCount();
+  paintedVisit = activityManager.visit();
+  paintedOrientation = static_cast<int>(renderer.getOrientation());
 }
 
 // --- input ----------------------------------------------------------------------------------------------------
 
 void WrenHomeActivity::move(int delta) {
+  RenderLock lock(*this);
   const int count = listCount();
   const int first = hasContinue && query.empty() ? -1 : 0;
   const int next = std::max(first, std::min(std::max(first, count - 1), focus + delta));
@@ -642,10 +716,13 @@ void WrenHomeActivity::move(int delta) {
 
 void WrenHomeActivity::openFocused() {
   std::string path;
-  if (focus < 0) {
-    if (hasContinue) path = continueBook.path;
-  } else if (Book* book = rowBook(focus)) {
-    path = book->path;
+  {
+    RenderLock lock(*this);
+    if (focus < 0) {
+      if (hasContinue) path = continueBook.path;
+    } else if (Book* book = rowBook(focus)) {
+      path = book->path;
+    }
   }
   if (!path.empty()) activityManager.goToReader(path);
 }
@@ -661,6 +738,7 @@ void WrenHomeActivity::openSearch() {
   startActivityForResult(std::move(keyboard), [this](const ActivityResult& result) {
     if (result.isCancelled) return;
     RenderLock lock(*this);
+    fullRedrawNeeded = true;
     query = std::get<KeyboardResult>(result.data).text;
     applySearch();
     focus = hasContinue && query.empty() ? -1 : 0;
@@ -671,14 +749,21 @@ void WrenHomeActivity::openSearch() {
 
 void WrenHomeActivity::menuAction() {
   std::string path, title;
-  if (focus < 0) {
-    path = continueBook.path;
-    title = continueBook.title;
-  } else if (Book* book = rowBook(focus)) {
-    path = book->path;
-    title = book->title;
+  {
+    RenderLock lock(*this);
+    if (focus < 0) {
+      path = continueBook.path;
+      title = continueBook.title;
+    } else if (Book* book = rowBook(focus)) {
+      path = book->path;
+      title = book->title;
+    }
   }
-  menuOpen = false;
+  {
+    RenderLock lock(*this);
+    menuOpen = false;
+    fullRedrawNeeded = true;
+  }
   if (path.empty()) {
     requestUpdate();
   } else if (menuFocus == 0) {
@@ -710,6 +795,7 @@ void WrenHomeActivity::deleteBook(const std::string& path, const std::string& ti
   }
   startActivityForResult(std::move(confirmation), [this](const ActivityResult& result) {
     RenderLock lock(*this);
+    fullRedrawNeeded = true;
     if (!result.isCancelled) {
       library::BuildStats stats;
       if (!library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0)) {
@@ -728,17 +814,19 @@ void WrenHomeActivity::deleteBook(const std::string& path, const std::string& ti
 
 void WrenHomeActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock(*this);
 
   if (menuOpen) {
     if (mappedInput.wasReleased(B::Back)) {
+      RenderLock lock(*this);
       menuOpen = false;
+      fullRedrawNeeded = true;
       requestUpdate();
     } else if (mappedInput.wasReleased(B::Confirm)) {
-      lock.unlock();
       menuAction();
     } else if (mappedInput.wasPressed(B::Left) || mappedInput.wasPressed(B::Right)) {
+      RenderLock lock(*this);
       menuFocus = mappedInput.wasPressed(B::Left) ? 0 : 1;
+      fullRedrawNeeded = true;
       requestUpdate();
     }
     return;
@@ -750,36 +838,36 @@ void WrenHomeActivity::loop() {
   }
   const bool empty = index.bookCount() == 0;
   if (mappedInput.wasPressed(B::Down)) {
-    lock.unlock();
     activityManager.goToFileTransfer();  // next tab: send
     return;
   }
   if (mappedInput.wasPressed(B::Up)) {
-    lock.unlock();
     activityManager.goToSettings();  // previous tab, wrapping: setup
     return;
   }
   if (empty) {
     if (mappedInput.wasReleased(B::Confirm)) {
-      lock.unlock();
       activityManager.goToFileTransfer();
     }
     return;
   }
   const bool bookFocused = focus < 0 ? hasContinue : focus < listCount();
   if (bookFocused && mappedInput.wasLongPressed(B::Confirm, LONG_PRESS_MS)) {
+    RenderLock lock(*this);
     menuOpen = true;
     menuFocus = 0;
+    fullRedrawNeeded = true;
     requestUpdate();
     return;
   }
   if (mappedInput.wasReleased(B::Confirm)) {
-    lock.unlock();
     openFocused();
     return;
   }
   if (mappedInput.wasReleased(B::Back)) {
     if (!query.empty()) {
+      RenderLock lock(*this);
+      fullRedrawNeeded = true;
       query.clear();
       applySearch();
       focus = hasContinue ? -1 : 0;
@@ -787,7 +875,6 @@ void WrenHomeActivity::loop() {
       invalidateRows();
       requestUpdate();
     } else {
-      lock.unlock();
       openSearch();
     }
     return;
@@ -796,8 +883,11 @@ void WrenHomeActivity::loop() {
   navigator.onPressAndContinuous({B::Right}, [this] { move(1); });
 
   // Covers missing on screen are made one at a time, after the screen without them is up.
-  if (painted && generateOneCover()) {
-    painted = false;
-    requestUpdate();
+  if (painted && !mappedInput.isPressed(B::Left) && !mappedInput.isPressed(B::Right)) {
+    RenderLock lock(RenderLock::Mode::Try);
+    if (lock.ownsLock()) {
+      painted = false;
+      if (generateOneCover(lock)) requestUpdate();
+    }
   }
 }

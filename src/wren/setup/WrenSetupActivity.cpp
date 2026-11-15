@@ -46,12 +46,11 @@ void WrenSetupActivity::open() {
   startActivityForResult(std::move(child), [this, orientation](const ActivityResult&) {
     RenderLock lock;
     renderer.setOrientation(orientation);
-    fullRefresh = true;
+    cleanRefresh = true;
   });
 }
 void WrenSetupActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   const int visible = std::max(0, (renderer.getScreenHeight() - 40 - 108) / 101);
   if (wren::setup::swipeSelection(mappedInput, selected, 4, visible)) {
     requestUpdate();
@@ -67,28 +66,23 @@ void WrenSetupActivity::loop() {
   const bool tapped = mappedInput.wasScreenTapped(tx, ty);
   if (tapped && ty >= 40 && ty < 96 && tx >= 100 && tx < renderer.getScreenWidth() - 20) {
     const int tab = (tx - 100) * 3 / (renderer.getScreenWidth() - 120);
-    lock.unlock();
     if (tab == 0) activityManager.goHome();
     if (tab == 1) activityManager.goToFileTransfer();
     return;
   }
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
-    lock.unlock();
     activityManager.goHome();
     return;
   }
   if (mappedInput.wasReleased(B::Confirm) || touch == MappedInputManager::RowTouch::Tap) {
-    lock.unlock();
     open();
     return;
   }
   if (mappedInput.wasPressed(B::Up)) {
-    lock.unlock();
     activityManager.goToFileTransfer();
     return;
   }
   if (mappedInput.wasPressed(B::Down)) {
-    lock.unlock();
     activityManager.goHome();
     return;
   }
@@ -123,6 +117,6 @@ void WrenSetupActivity::render(RenderLock&&) {
   }
   unclip(renderer);
   footer(renderer);
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }

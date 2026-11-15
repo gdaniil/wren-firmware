@@ -14,6 +14,8 @@
 // Send and setup tabs open the upstream screens until ours exist.
 class WrenHomeActivity final : public Activity {
  public:
+  static void requestDeleteOnEnter(std::string path);
+
   WrenHomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool cleanInitialRefresh);
   void onEnter() override;
   void onExit() override;
@@ -48,7 +50,7 @@ class WrenHomeActivity final : public Activity {
   void applySearch();
   Cover coverState(Book& book, int height);
   bool generateCover(Book& book, int height);
-  bool generateOneCover();
+  bool generateOneCover(RenderLock& lock);
   bool failed(const std::string& path) const;
   void markFailed(const std::string& path);
 
@@ -56,6 +58,7 @@ class WrenHomeActivity final : public Activity {
   int contentTop() const;
   bool cardVisible() const;
   int rowsTop() const;
+  int elementY(int element) const;
   int visibleRows() const;
 
   // Drawing
@@ -82,7 +85,16 @@ class WrenHomeActivity final : public Activity {
   library::LibraryIndexFile index;
   const bool cleanInitialRefresh;
   bool firstPaint = true;
-  bool painted = false;         // a frame is on screen since the last cover was made
+  bool painted = false;          // a frame is on screen since the last cover was made
+  bool generatingCover = false;  // render must not touch the borrowed book
+  bool fullRedrawNeeded = true;
+  bool paintedMenu = false;
+  bool paintedCard = false;
+  int paintedFocus = 0;
+  int paintedStart = 0;
+  uint32_t paintedLoans = 0;
+  uint32_t paintedVisit = 0;
+  int paintedOrientation = 0;
   bool swallowConfirm = false;  // Confirm was held on entry; ignore its release
   ButtonNavigator navigator;
 

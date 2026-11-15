@@ -433,7 +433,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
   // Wren typography steps and fonts are indexed by mode; steps are zero-based.
   uint8_t wrenMode = 1;
-  uint8_t wrenStep[3] = {1, 0, 0};
+  uint8_t wrenStep[3] = {2, 1, 0};
   uint8_t wrenFont[3] = {0, 0, 1};
 
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;

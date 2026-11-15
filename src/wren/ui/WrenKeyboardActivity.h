@@ -28,12 +28,10 @@ class WrenKeyboardActivity final : public Activity {
   std::string crumb;
   std::string title;
   std::string fieldLabel;
-  bool switchFocus = false;
   int fieldScroll = 0;
   std::string text;
   size_t maxLength;
   InputType inputType;
-  bool passwordVisible = false;
 
   ButtonNavigator buttonNavigator;
 
@@ -67,16 +65,11 @@ class WrenKeyboardActivity final : public Activity {
   bool confirmLongHandled = false;
 
   bool cursorMode = false;
-  bool togglePos = false;
   size_t cursorPos = 0;  // byte offset into text (always on a code point boundary)
   bool upHeld = false;
   bool upLongHandled = false;
   bool downHeld = false;
   bool downLongHandled = false;
-  bool rightHeld = false;
-  bool rightLongHandled = false;
-  size_t savedCursorPos = 0;
-  size_t rightStartCursorPos = 0;
 
   // Tap/hold routing (threshold long-press, release swallow, slide re-arm)
   // lives in the SDK; loop() feeds it the level-triggered touch state.

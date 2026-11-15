@@ -33,6 +33,6 @@ class WrenFilesActivity final : public Activity {
   int start = 0;
   int cachedStart = -1;
   int cachedVisible = -1;
-  bool fullRefresh = true;
+  bool cleanRefresh = true;
   ButtonNavigator navigator{250, 500};
 };

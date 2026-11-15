@@ -33,6 +33,7 @@ void WrenGoToActivity::updateChapter() {
 void WrenGoToActivity::adjust(int delta) {
   int next = wren::reader::stepPercent(percent, delta);
   if (next == percent) return;
+  RenderLock lock;
   percent = next;
   updateChapter();
   requestUpdate();
@@ -49,7 +50,6 @@ bool WrenGoToActivity::handleHomeGesture() {
 }
 void WrenGoToActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   if (mappedInput.wasReleased(B::Back)) {
     cancel();
     return;
@@ -105,6 +105,6 @@ void WrenGoToActivity::render(RenderLock&&) {
                        {TabKind::ArrowDown}};
   drawButtonTabs(renderer, tabs);
   drawEdgeTabs(renderer, true, true);
-  renderer.displayBuffer(first ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
+  renderer.displayBuffer(first ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   first = false;
 }

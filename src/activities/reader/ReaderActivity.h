@@ -54,13 +54,15 @@ class ReaderActivity : public Activity {
   virtual bool remoteShortcut(bool /*readerMenu*/) { return false; }
   virtual bool isAtEndOfBook() const = 0;
   virtual void onReturnFromEndOfBook() {}
+  virtual void restartFromBeginning() = 0;
+  virtual void prepareForEndOfBookDelete() {}
 
   virtual void renderBook() = 0;
   virtual void applyInitialOrientation();
   virtual void onEndOfBookRendered() {}
 
   bool handleBackNavigation();
-  /** True while the end-of-book suggestion menu is on screen and owning input. */
+  /** True while the end-of-book menu is on screen and owning input. */
   bool endOfBookMenuActive() const;
   /** True while a toolbar, panel or menu over the page owns the device keys: a remote turn is refused. */
   virtual bool inputOverPage() const { return endOfBookMenuActive(); }

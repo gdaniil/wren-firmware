@@ -22,6 +22,6 @@ class WrenReaderSettingsActivity final : public Activity {
   std::vector<std::string> lines;
   int selected = 0;
   int font = 0;
-  bool changed = false, fullRefresh = true;
+  bool changed = false, cleanRefresh = true;
   ButtonNavigator navigator{250, 500};
 };

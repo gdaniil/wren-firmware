@@ -46,6 +46,7 @@ void WrenReaderSettingsActivity::updatePreview() {
               : std::vector<std::string>{};
 }
 void WrenReaderSettingsActivity::change(int delta) {
+  RenderLock lock;
   using namespace wren::reader;
   switch (static_cast<SettingsRow>(selected)) {
     case SettingsRow::Font:
@@ -64,7 +65,7 @@ void WrenReaderSettingsActivity::change(int delta) {
     case SettingsRow::Orientation:
       SETTINGS.orientation = toggleOrientation(SETTINGS.orientation);
       ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
-      fullRefresh = true;
+      cleanRefresh = true;
       break;
   }
   changed = true;
@@ -73,9 +74,7 @@ void WrenReaderSettingsActivity::change(int delta) {
 }
 void WrenReaderSettingsActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   if (mappedInput.wasReleased(B::Back)) {
-    lock.unlock();
     close();
     return;
   }
@@ -166,6 +165,6 @@ void WrenReaderSettingsActivity::render(RenderLock&&) {
                        {TabKind::ArrowDown}};
   drawButtonTabs(renderer, tabs);
   drawEdgeTabs(renderer, true, true);
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }

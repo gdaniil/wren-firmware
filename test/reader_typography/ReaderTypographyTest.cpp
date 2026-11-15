@@ -9,16 +9,16 @@ using namespace wren;
 TEST(ReaderTypography, ConversionAndDefault) {
   EXPECT_EQ(mmToPx(25.4f, X3_PPI), 259);
   auto result = resolve(X3_PPI, Mode::Standard, modeSpec(Mode::Standard).defaultStep, Font::Literata, "ru");
-  EXPECT_EQ(result.xHeightPx, 14);
-  EXPECT_EQ(result.linePitchPx, 38);
+  EXPECT_EQ(result.xHeightPx, 15);
+  EXPECT_EQ(result.linePitchPx, 41);
   EXPECT_EQ(result.sideMarginPx, 16);
   EXPECT_EQ(result.topMarginPx, 48);
   EXPECT_EQ(result.bottomMarginPx, 24);
   const auto large = resolve(X3_PPI, Mode::Large, 0, Font::Literata, "ru");
-  EXPECT_EQ(large.topMarginPx, 96);
-  EXPECT_EQ(large.bottomMarginPx, 48);
-  EXPECT_EQ(result.regularWeight, 385);
-  EXPECT_EQ(result.boldWeight, 450);
+  EXPECT_EQ(large.topMarginPx, 48);
+  EXPECT_EQ(large.bottomMarginPx, 24);
+  EXPECT_EQ(result.regularWeight, 350);
+  EXPECT_EQ(result.boldWeight, 540);
 }
 
 TEST(ReaderTypography, AllStepsAndLanguages) {
@@ -54,8 +54,8 @@ TEST(ReaderTypography, Navigation) {
 
 TEST(ReaderTypography, SpecFigures) {
   constexpr int expectedXh[2][3][5] = {
-      {{11, 12, 13, 14, 15}, {14, 15, 17, 19, 22}, {24, 28, 32, 36, 41}},
-      {{9, 10, 11, 12, 13}, {12, 13, 15, 16, 18}, {21, 23, 26, 30, 34}},
+      {{11, 12, 13, 14, 15}, {14, 15, 17, 19, 22}, {21, 24, 28, 32, 36}},
+      {{9, 10, 11, 12, 13}, {12, 13, 15, 16, 18}, {18, 21, 23, 26, 30}},
   };
   for (int device = 0; device < 2; ++device) {
     for (int m = 0; m < 3; ++m) {

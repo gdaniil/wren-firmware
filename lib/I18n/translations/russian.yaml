@@ -816,7 +816,6 @@ STR_WREN_BUSY_CARD_BUSY: "карта занята, попробуйте ещё �
 STR_WREN_BUSY_FONT_DAMAGED: "шрифт повреждён"
 STR_WREN_BUSY_DEFAULT_FONT: "использую шрифт по умолчанию"
 STR_WREN_END_TITLE: "конец книги"
-STR_WREN_END_NEXT: "дальше в этой папке"
 STR_WREN_CACHE_TITLE: "очистить кэш чтения?"
 STR_WREN_CACHE_BODY: "Книги останутся на карте. Прогресс чтения пропадёт, книги заново проиндексируются при открытии."
 STR_WREN_CACHE_CLEAR: "очистить"

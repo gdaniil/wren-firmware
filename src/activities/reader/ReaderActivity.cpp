@@ -19,6 +19,8 @@
 #include "SdCardFontSystem.h"
 #include "XtcReaderActivity.h"
 #include "util/PluginEvents.h"
+#include "wren/home/WrenHomeActivity.h"
+#include "wren/ui/WrenDeleteDialog.h"
 
 ReaderActivity::ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
                                std::string bookPath, const bool allowFastInitialRefresh)
@@ -173,7 +175,7 @@ void ReaderActivity::clearEndOfBookOptionsIfNeeded() {
 }
 
 bool ReaderActivity::endOfBookMenuActive() const {
-  return isAtEndOfBook() && endOfBookOptionsReady.load(std::memory_order_acquire) && endOfBookOptions->menuActive();
+  return isAtEndOfBook() && endOfBookOptionsReady.load(std::memory_order_acquire);
 }
 
 bool ReaderActivity::handleEndOfBookMenu(const bool suppressConfirmRelease) {
@@ -181,11 +183,32 @@ bool ReaderActivity::handleEndOfBookMenu(const bool suppressConfirmRelease) {
     return false;
   }
 
-  std::string openPath;
-  switch (endOfBookOptions->handleMenuInput(mappedInput, &openPath)) {
-    case EndOfBookOptions::Action::OpenBook:
-      activityManager.goToReader(openPath);
+  switch (endOfBookOptions->handleMenuInput(mappedInput)) {
+    case EndOfBookOptions::Action::Restart:
+      restartFromBeginning();
+      requestUpdate();
       return true;
+    case EndOfBookOptions::Action::Delete: {
+      auto dialog = makeUniqueNoThrow<WrenDeleteDialog>(
+          renderer, mappedInput, bookPath, endOfBookOptions->displayTitle(),
+          [](void* context) {
+            auto* reader = static_cast<ReaderActivity*>(context);
+            reader->renderer.clearScreen();
+            reader->endOfBookOptions->render(reader->renderer, reader->mappedInput);
+          },
+          this, true);
+      if (!dialog) {
+        LOG_ERR("READER", "OOM: delete confirmation");
+        return true;
+      }
+      startActivityForResult(std::move(dialog), [this](const ActivityResult& result) {
+        if (result.isCancelled) return;
+        prepareForEndOfBookDelete();
+        WrenHomeActivity::requestDeleteOnEnter(bookPath);
+        onGoHome();
+      });
+      return true;
+    }
     case EndOfBookOptions::Action::GoHome:
       onGoHome();
       return true;
@@ -205,14 +228,8 @@ bool ReaderActivity::handleEndOfBookMenu(const bool suppressConfirmRelease) {
 
 bool ReaderActivity::handleEndOfBookPageTurn(const bool prevTriggered, const bool nextTriggered) {
   if (!isAtEndOfBook()) return false;
-
-  if (endOfBookOptionsReady.load(std::memory_order_acquire) && endOfBookOptions->hasSuggestions()) {
-    return true;
-  }
-  if (nextTriggered) {
-    onGoHome();
-  } else if (prevTriggered) {
-    onReturnFromEndOfBook();
+  if (endOfBookOptionsReady.load(std::memory_order_acquire) && (prevTriggered || nextTriggered)) {
+    endOfBookOptions->moveSelection(nextTriggered);
     requestUpdate();
   }
   return true;
@@ -222,11 +239,11 @@ void ReaderActivity::loop() {
   rememberBookOnceRendered();
   clearEndOfBookOptionsIfNeeded();
   if (handleEndOfBookMenu()) return;
-  if (handleFormatInput()) return;
+  if (!isAtEndOfBook() && handleFormatInput()) return;
   if (handleBackNavigation()) return;
 
   const auto touch = ReaderUtils::detectTouchPageTurn(renderer, mappedInput);
-  auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
+  auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput, !isAtEndOfBook());
   prevTriggered = prevTriggered || touch.prev;
   nextTriggered = nextTriggered || touch.next;
   if (!prevTriggered && !nextTriggered) return;
@@ -246,14 +263,19 @@ void ReaderActivity::loop() {
 void ReaderActivity::render(RenderLock&&) {
   if (isAtEndOfBook()) {
     if (!endOfBookOptions) {
-      endOfBookOptions = makeUniqueNoThrow<EndOfBookOptions>(renderer);
+      std::string title = getBookTitle();
+      if (title.empty()) {
+        const auto slash = bookPath.find_last_of('/');
+        title = bookPath.substr(slash == std::string::npos ? 0 : slash + 1);
+        const auto dot = title.find_last_of('.');
+        if (dot != std::string::npos) title.erase(dot);
+      }
+      endOfBookOptions = makeUniqueNoThrow<EndOfBookOptions>(renderer, std::move(title), getBookAuthor());
       if (!endOfBookOptions) LOG_ERR("READER", "OOM: EndOfBookOptions");
     }
     renderer.clearScreen();
     if (endOfBookOptions) {
-      endOfBookOptions->loadOnce(bookPath);
-      // Release-publish AFTER loadOnce() so the main task's acquire load can't
-      // observe an object whose names/selector are still being populated.
+      // Publish the initialized menu to the input task.
       endOfBookOptionsReady.store(true, std::memory_order_release);
       endOfBookOptions->render(renderer, mappedInput);
     }

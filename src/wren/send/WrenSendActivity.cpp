@@ -87,15 +87,17 @@ void WrenSendActivity::joinNetwork() {
   }
   const auto orientation = renderer.getOrientation();
   startActivityForResult(std::move(child), [this, orientation](const ActivityResult& result) {
-    RenderLock lock;
-    renderer.setOrientation(orientation);
-    if (result.isCancelled) {
-      state = wren::send::State::Choose;
-      return;
+    {
+      RenderLock lock;
+      renderer.setOrientation(orientation);
+      if (result.isCancelled) {
+        state = wren::send::State::Choose;
+        return;
+      }
+      const auto& wifi = std::get<WifiResult>(result.data);
+      snprintf(ip, sizeof(ip), "%s", wifi.ip.c_str());
+      snprintf(ssid, sizeof(ssid), "%s", wifi.ssid.c_str());
     }
-    const auto& wifi = std::get<WifiResult>(result.data);
-    snprintf(ip, sizeof(ip), "%s", wifi.ip.c_str());
-    snprintf(ssid, sizeof(ssid), "%s", wifi.ssid.c_str());
     restartMdns();
     startServer();
   });
@@ -125,7 +127,7 @@ void WrenSendActivity::choose(int row) {
         RenderLock lock;
         renderer.setOrientation(orientation);
         state = State::Choose;
-        fullRefresh = true;
+        cleanRefresh = true;
       });
       return;
     }
@@ -143,15 +145,21 @@ void WrenSendActivity::startAccessPoint() {
   WiFi.softAPmacAddress(mac);
   char name[10];
   wren::send::formatSsid(name, mac);
-  snprintf(ssid, sizeof(ssid), "%s", name);
-  if (!WiFi.softAP(ssid, nullptr, 1, false, 4)) {
+  {
+    RenderLock lock;
+    snprintf(ssid, sizeof(ssid), "%s", name);
+  }
+  if (!WiFi.softAP(name, nullptr, 1, false, 4)) {
     LOG_ERR("SEND", "AP start failed");
     fail(Failure::Hotspot);
     return;
   }
   delay(100);
   const IPAddress address = WiFi.softAPIP();
-  snprintf(ip, sizeof(ip), "%u.%u.%u.%u", address[0], address[1], address[2], address[3]);
+  {
+    RenderLock lock;
+    snprintf(ip, sizeof(ip), "%u.%u.%u.%u", address[0], address[1], address[2], address[3]);
+  }
   restartMdns();
   // DNS is allocated once for the AP session and released on failure or exit.
   dns = makeUniqueNoThrow<DNSServer>();
@@ -169,7 +177,10 @@ void WrenSendActivity::startAccessPoint() {
   startServer();
 }
 void WrenSendActivity::startServer() {
-  if (auto* fcm = renderer.getFontCacheManager()) fcm->releaseSdFontCaches();
+  {
+    RenderLock lock;
+    if (auto* fcm = renderer.getFontCacheManager()) fcm->releaseSdFontCaches();
+  }
   // One server owns all transfer services until retry or exit.
   webServer = makeUniqueNoThrow<CrossPointWebServer>();
   if (!webServer) {
@@ -204,11 +215,25 @@ void WrenSendActivity::startServer() {
     fail(apMode ? Failure::Hotspot : Failure::Server);
     return;
   }
-  prepareQr();
   lastCompleteAt = webServer->getWsUploadStatus().lastCompleteAt;
-  state = wren::send::State::Running;
-  wifiBars = apMode ? 0 : barsForRssi(WiFi.RSSI(), 0);
-  if (!apMode) pluginevents::drain(&renderer);
+  const int bars = apMode ? 0 : barsForRssi(WiFi.RSSI(), 0);
+  {
+    RenderLock lock;
+    prepareQr();
+    wifiBars = bars;
+    state = wren::send::State::Running;
+  }
+  if (!apMode) {
+    {
+      RenderLock lock;
+      drainingEvents = true;
+    }
+    pluginevents::drain(&renderer);
+    {
+      RenderLock lock;
+      drainingEvents = false;
+    }
+  }
   requestUpdate();
 }
 void WrenSendActivity::prepareQr() {
@@ -264,23 +289,28 @@ void WrenSendActivity::loop() {
       startFrameShown = true;
       return;
     }
-    RenderLock lock;
     startAccessPoint();
     return;
   }
   if (state == State::Choose || state == State::Failed) {
-    RenderLock lock;
     const bool menu = state == State::Choose;
     const int count = menu ? menuRowCount(HAS_USB) : 2;
-    const char* failureText = I18N.get(failure == Failure::Hotspot    ? StrId::STR_WREN_SEND_HOTSPOT_FAILED
-                                       : failure == Failure::WifiLost ? StrId::STR_WREN_SEND_WIFI_LOST
-                                                                      : StrId::STR_WREN_SEND_TRANSFER_FAILED);
-    const int rowTop = menu ? 187
-                            : 212 +
-                                  wren::ui::wrappedLineCount(renderer, WREN_GOLOS_18_FONT_ID, failureText,
-                                                             renderer.getScreenWidth() - 40, 3) *
-                                      25 +
-                                  35;
+    int rowTop = 187;
+    int touchX = 0, touchY = 0;
+    const bool touchInput = mappedInput.wasScreenTouchDown(touchX, touchY) ||
+                            mappedInput.wasScreenTapped(touchX, touchY) ||
+                            mappedInput.wasSwipe() != MappedInputManager::SwipeDir::None;
+    if (!menu && touchInput) {
+      const char* failureText = I18N.get(failure == Failure::Hotspot    ? StrId::STR_WREN_SEND_HOTSPOT_FAILED
+                                         : failure == Failure::WifiLost ? StrId::STR_WREN_SEND_WIFI_LOST
+                                                                        : StrId::STR_WREN_SEND_TRANSFER_FAILED);
+      RenderLock lock;
+      rowTop =
+          212 +
+          wren::ui::wrappedLineCount(renderer, WREN_GOLOS_18_FONT_ID, failureText, renderer.getScreenWidth() - 40, 3) *
+              25 +
+          35;
+    }
     const int rowHeight = menu ? 104 : 88;
     const int contentBottom = renderer.getScreenHeight() - (menu ? 72 : 40);
     const int visible = std::max(1, (contentBottom - rowTop) / rowHeight);
@@ -295,14 +325,12 @@ void WrenSendActivity::loop() {
     if (menu && mappedInput.wasScreenTapped(tx, ty) && ty >= 40 && ty < 96 && tx >= 100 &&
         tx < renderer.getScreenWidth() - 20) {
       const int tab = (tx - 100) * 3 / (renderer.getScreenWidth() - 120);
-      lock.unlock();
       if (tab == 0) activityManager.goHome();
       if (tab == 2) activityManager.goToSettings();
       return;
     }
     if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
       if (menu) {
-        lock.unlock();
         activityManager.goHome();
       } else {
         state = State::Choose;
@@ -327,12 +355,10 @@ void WrenSendActivity::loop() {
       return;
     }
     if (menu && mappedInput.wasPressed(B::Up)) {
-      lock.unlock();
       activityManager.goHome();
       return;
     }
     if (menu && mappedInput.wasPressed(B::Down)) {
-      lock.unlock();
       activityManager.goToSettings();
       return;
     }
@@ -351,14 +377,16 @@ void WrenSendActivity::loop() {
   const unsigned long now = millis();
   if (apMode && now - lastStationPoll >= 1000) {
     lastStationPoll = now;
+    const int stations = WiFi.softAPgetStationNum();
     RenderLock lock;
-    if (hotspot.poll(WiFi.softAPgetStationNum(), received.count != 0, wsInProgress)) scheduleUploadRedraw();
+    if (hotspot.poll(stations, received.count != 0, wsInProgress)) scheduleUploadRedraw();
   }
   if (!apMode && now - lastWifiCheck >= 2000) {
-    RenderLock lock;
     lastWifiCheck = now;
+    const bool connected = WiFi.status() == WL_CONNECTED;
+    const int rssi = connected ? WiFi.RSSI() : 0;
     bool repaint = false;
-    if (WiFi.status() != WL_CONNECTED) {
+    if (!connected) {
       if (!consecutiveDisconnects++) {
         firstDisconnectAt = now;
         repaint = true;
@@ -370,7 +398,7 @@ void WrenSendActivity::loop() {
     } else {
       if (consecutiveDisconnects) repaint = true;
       consecutiveDisconnects = 0;
-      const int bars = barsForRssi(WiFi.RSSI(), wifiBars);
+      const int bars = barsForRssi(rssi, wifiBars);
       if (bars != wifiBars) {
         wifiBars = bars;
         repaint = true;
@@ -585,6 +613,7 @@ void WrenSendActivity::renderRunning() {
   }
 }
 void WrenSendActivity::render(RenderLock&&) {
+  if (drainingEvents) return;
   using namespace wren::ui;
   using wren::send::State;
   if (state == State::JoinPick) return;
@@ -612,6 +641,6 @@ void WrenSendActivity::render(RenderLock&&) {
   }
   wren::setup::unclip(renderer);
   footer(state == State::Choose || state == State::Failed);
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }

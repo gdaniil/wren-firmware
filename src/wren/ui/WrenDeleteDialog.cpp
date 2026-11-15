@@ -17,8 +17,13 @@
 #include "wren/setup/FilesState.h"
 
 WrenDeleteDialog::WrenDeleteDialog(GfxRenderer& r, MappedInputManager& i, const std::string& p, const std::string& t,
-                                   void (*paint)(void*), void* context)
-    : Activity("WrenDelete", r, i), path(p), title(t), paintBackground(paint), backgroundContext(context) {}
+                                   void (*paint)(void*), void* context, bool defer)
+    : Activity("WrenDelete", r, i),
+      path(p),
+      title(t),
+      paintBackground(paint),
+      backgroundContext(context),
+      deferRemoval(defer) {}
 WrenDeleteDialog::WrenDeleteDialog(GfxRenderer& r, MappedInputManager& i, const char* heading, const char* body,
                                    const char* confirmLabel, void (*paint)(void*), void* context)
     : Activity("WrenDelete", r, i),
@@ -43,27 +48,31 @@ void WrenDeleteDialog::keep() {
   setResult(std::move(result));
   finish();
 }
+bool wren::ui::deleteBookFromCard(const std::string& path) {
+  bool removed = removeBookFile(path);
+  const bool book = FsHelpers::hasReflowableBookExtension(path) || FsHelpers::hasXtcExtension(path);
+  if (!removed && !book) removed = Storage.remove(path.c_str());
+  // removeBookFile may report clipping cleanup failure after removing the file.
+  if (!removed && Storage.exists(path.c_str())) return false;
+  if (RECENT_BOOKS.removeByPath(path)) RECENT_BOOKS.saveToFile();
+  if (library::isLibraryBookFile(path)) library::markLibraryIndexDirty();
+  return true;
+}
+
 void WrenDeleteDialog::remove() {
-  if (customHeading) {
+  if (customHeading || deferRemoval) {
     setResult(ActivityResult{});
     finish();
     return;
   }
   RenderLock lock;
-  bool removed = removeBookFile(path);
-  const bool book = FsHelpers::hasReflowableBookExtension(path) || FsHelpers::hasXtcExtension(path);
-  if (!removed && !book) removed = Storage.remove(path.c_str());
-  // removeBookFile may report clipping cleanup failure after removing the file.
-  if (!removed && Storage.exists(path.c_str())) {
+  if (!wren::ui::deleteBookFromCard(path)) {
     LOG_ERR("WDELETE", "Failed to delete %s", path.c_str());
     failed = true;
     requestUpdate();
     return;
   }
-  if (RECENT_BOOKS.removeByPath(path)) RECENT_BOOKS.saveToFile();
-  if (library::isLibraryBookFile(path)) library::markLibraryIndexDirty();
-  ActivityResult result;
-  setResult(std::move(result));
+  setResult(ActivityResult{});
   lock.unlock();
   finish();
 }

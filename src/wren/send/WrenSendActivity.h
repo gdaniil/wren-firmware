@@ -43,7 +43,8 @@ class WrenSendActivity final : public Activity {
   bool startInJoinNetwork = false;
   bool apMode = false;
   bool leaveRequested = false;
-  bool fullRefresh = true;
+  bool drainingEvents = false;
+  bool cleanRefresh = true;
   bool startFrameShown = false;
   int selected = 0;
   int scroll = 0;

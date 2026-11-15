@@ -66,6 +66,7 @@ class EpubReaderActivity final : public ReaderActivity {
   std::vector<BookmarkEntry> cachedBookmarks;
   bool recentsEntryRemoved = false;
   unsigned long bookmarkMessageTime = 0UL;
+  bool endOfBookDeleteRequested = false;
   bool pendingReadFolderMove = false;
 
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
@@ -268,6 +269,8 @@ class EpubReaderActivity final : public ReaderActivity {
   bool remoteShortcut(bool readerMenu) override;
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;
+  void restartFromBeginning() override;
+  void prepareForEndOfBookDelete() override;
 
   bool skipLoopDelay() override;
 

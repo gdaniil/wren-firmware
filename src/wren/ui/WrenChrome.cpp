@@ -249,7 +249,8 @@ int drawBookHeader(const GfxRenderer& r, int y, const char* title, int page, int
 }
 void drawTabHeader(const GfxRenderer& r, int top, int activeTab) {
   const int sw = r.getScreenWidth();
-  drawIcon(r, icons::Wren, 20, top + 8, 2, true);
+  const Icon& mascot = activeTab == 1 ? icons::WrenSend : activeTab == 2 ? icons::WrenSetup : icons::WrenClassic;
+  drawIcon(r, mascot, 20, top + 8, 2, true);
   const int x = 100, w = sw - 20 - x, y = top + 12;
   r.drawRect(x, y, w, 56, 3, true);
   const StrId labels[] = {StrId::STR_WREN_TAB_LIBRARY, StrId::STR_WREN_TAB_SEND, StrId::STR_WREN_TAB_SETUP};
@@ -306,9 +307,14 @@ int drawRow(const GfxRenderer& r, int y, const Row& row) {
     draw(r, LABEL, right, y + (52 - r.getTextHeight(LABEL)) / 2, text, ink, 1);
     right -= 16;
   }
+  int left = 20;
+  if (row.leadingIcon) {
+    drawIcon(r, *row.leadingIcon, left, y + (52 - row.leadingIcon->height) / 2, 1, ink);
+    left += row.leadingIcon->width + 12;
+  }
   copyText(text, row.label, false);
-  fit(r, text, ROW, -1, layout::truncationWidth(20, right));
-  draw(r, ROW, 20, y + (52 - r.getTextHeight(ROW)) / 2, text, ink, -1);
+  fit(r, text, ROW, -1, layout::truncationWidth(left, right));
+  draw(r, ROW, left, y + (52 - r.getTextHeight(ROW)) / 2, text, ink, -1);
   r.fillRect(0, y + 52, sw, 2, true);
   return y + layout::ROW_HEIGHT;
 }

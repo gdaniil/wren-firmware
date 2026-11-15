@@ -58,6 +58,7 @@ void WrenWifiActivity::onExit() {
 
 void WrenWifiActivity::setState(State next) {
   if (state == next) return;
+  RenderLock lock(*this);
   int x = 0, y = 0;
   touchTransitionGuard = mappedInput.isScreenTouchHeld(x, y);
   touchRouter.reset();
@@ -70,7 +71,10 @@ void WrenWifiActivity::startScan(bool automatic) {
   manualListRequested = false;
   setState(State::Scanning);
   selected = scroll = 0;
-  networks.clear();
+  {
+    RenderLock lock(*this);
+    networks.clear();
+  }
   requestUpdate();
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -81,25 +85,35 @@ void WrenWifiActivity::startScan(bool automatic) {
 void WrenWifiActivity::processScan() {
   const int16_t count = WiFi.scanComplete();
   if (count == WIFI_SCAN_RUNNING) return;
-  networks.clear();
+  std::vector<Network> foundNetworks;
+  {
+    RenderLock lock(*this);
+    foundNetworks.swap(networks);
+  }
+  foundNetworks.clear();
   if (count >= 0) {
-    networks.reserve(count);
+    foundNetworks.reserve(count);
     for (int i = 0; i < count; ++i) {
       char ssid[33];
       strlcpy(ssid, WiFi.SSID(i).c_str(), sizeof(ssid));
       if (!ssid[0]) continue;
       const int32_t rssi = WiFi.RSSI(i);
-      auto found = std::find_if(networks.begin(), networks.end(), [&ssid](const Network& n) { return n.ssid == ssid; });
-      if (found == networks.end()) {
-        networks.push_back({ssid, rssi, WiFi.encryptionType(i) != WIFI_AUTH_OPEN, false, false});
-        networks.back().saved = WIFI_STORE.hasSavedCredential(networks.back().ssid);
+      auto found = std::find_if(foundNetworks.begin(), foundNetworks.end(),
+                                [&ssid](const Network& n) { return n.ssid == ssid; });
+      if (found == foundNetworks.end()) {
+        foundNetworks.push_back({ssid, rssi, WiFi.encryptionType(i) != WIFI_AUTH_OPEN, false, false});
+        foundNetworks.back().saved = WIFI_STORE.hasSavedCredential(foundNetworks.back().ssid);
       } else if (rssi > found->rssi) {
         found->rssi = rssi;
         found->encrypted = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
       }
     }
-    std::sort(networks.begin(), networks.end(),
+    std::sort(foundNetworks.begin(), foundNetworks.end(),
               [](const Network& a, const Network& b) { return a.saved != b.saved ? a.saved : a.rssi > b.rssi; });
+  }
+  {
+    RenderLock lock(*this);
+    networks.swap(foundNetworks);
   }
   WiFi.scanDelete();
   if (autoConnecting && !manualListRequested && tryNextSaved()) return;
@@ -111,7 +125,10 @@ bool WrenWifiActivity::tryCredential(const WifiCredential& credential) {
   if (networks.empty()) strlcpy(firstAttemptedSsid, credential.ssid.c_str(), sizeof(firstAttemptedSsid));
   for (auto& network : networks)
     if (network.ssid == credential.ssid) network.attempted = true;
-  selectedSSID = credential.ssid;
+  {
+    RenderLock lock(*this);
+    selectedSSID = credential.ssid;
+  }
   enteredPassword = credential.password;
   requiresPassword = !credential.password.empty();
   usedSavedPassword = true;
@@ -162,7 +179,10 @@ void WrenWifiActivity::showList() {
 void WrenWifiActivity::selectNetwork(size_t index) {
   if (index >= networks.size()) return;
   const auto& network = networks[index];
-  selectedSSID = network.ssid;
+  {
+    RenderLock lock(*this);
+    selectedSSID = network.ssid;
+  }
   requiresPassword = network.encrypted;
   enteredPassword.clear();
   usedSavedPassword = false;
@@ -180,7 +200,10 @@ void WrenWifiActivity::selectNetwork(size_t index) {
 }
 
 void WrenWifiActivity::promptHidden() {
-  selectedSSID.clear();
+  {
+    RenderLock lock(*this);
+    selectedSSID.clear();
+  }
   enteredPassword.clear();
   requiresPassword = true;
   usedSavedPassword = autoConnecting = false;
@@ -194,12 +217,14 @@ void WrenWifiActivity::promptHidden() {
   }
   setState(State::HiddenEntry);
   startActivityForResult(std::move(child), [this](const ActivityResult& result) {
-    RenderLock lock(*this);
     if (result.isCancelled) {
       showList();
       return;
     }
-    selectedSSID = std::get<KeyboardResult>(result.data).text;
+    {
+      RenderLock lock(*this);
+      selectedSSID = std::get<KeyboardResult>(result.data).text;
+    }
     if (selectedSSID.empty()) showList();
   });
 }
@@ -216,7 +241,6 @@ void WrenWifiActivity::promptPassword() {
   usedSavedPassword = false;
   setState(State::PasswordEntry);
   startActivityForResult(std::move(child), [this](const ActivityResult& result) {
-    RenderLock lock(*this);
     if (result.isCancelled) {
       showList();
       return;
@@ -268,13 +292,17 @@ void WrenWifiActivity::pollConnection() {
       SETTINGS.saveToFile();
     }
     trustedtime::startSync();
+    WIFI_STORE.setLastConnectedSsid(selectedSSID);
     {
       RenderLock lock(*this);
-      WIFI_STORE.setLastConnectedSsid(selectedSSID);
+      drainingEvents = true;
     }
     pluginevents::drain(&renderer);
-    if (!usedSavedPassword && !enteredPassword.empty()) {
+    {
       RenderLock lock(*this);
+      drainingEvents = false;
+    }
+    if (!usedSavedPassword && !enteredPassword.empty()) {
       setState(State::Save);
       selected = scroll = 0;
       requestUpdate();
@@ -286,7 +314,6 @@ void WrenWifiActivity::pollConnection() {
   const bool timedOut = millis() - connectionStart > (autoConnecting ? AUTO_TIMEOUT_MS : CONNECTION_TIMEOUT_MS);
   if (status != WL_CONNECT_FAILED && status != WL_NO_SSID_AVAIL && !timedOut) return;
   if (timedOut) WiFi.disconnect();
-  RenderLock lock(*this);
   if (autoConnecting) {
     autoFailure();
     return;
@@ -311,7 +338,10 @@ void WrenWifiActivity::activateRow(size_t index, bool longPress) {
     const auto kind = wren::wifi::row(index, networks.size());
     if (longPress) {
       if (kind == Row::Network && networks[index].saved) {
-        selectedSSID = networks[index].ssid;
+        {
+          RenderLock lock(*this);
+          selectedSSID = networks[index].ssid;
+        }
         setState(State::Forget);
         selected = scroll = 0;
         requestUpdate();
@@ -367,7 +397,6 @@ void WrenWifiActivity::activateRow(size_t index, bool longPress) {
 
 void WrenWifiActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock(*this);
   if (state == State::Scanning) {
     if (mappedInput.wasPressed(B::Back)) {
       WiFi.scanDelete();
@@ -392,7 +421,6 @@ void WrenWifiActivity::loop() {
       showManualList();
       return;
     }
-    lock.unlock();
     pollConnection();
     return;
   }
@@ -575,6 +603,7 @@ void WrenWifiActivity::drawMessage(const char* headline, const char* message, co
 }
 
 void WrenWifiActivity::render(RenderLock&&) {
+  if (drainingEvents) return;
   using namespace wren::ui;
   if (state == State::HiddenEntry || state == State::PasswordEntry) return;
   wren::setup::status(renderer);

@@ -48,6 +48,7 @@ class WrenWifiActivity final : public Activity {
   std::vector<Network> networks;
   char firstAttemptedSsid[33]{};
   bool touchTransitionGuard = false;
+  bool drainingEvents = false;
   size_t selected = 0;
   size_t scroll = 0;
   std::string selectedSSID;

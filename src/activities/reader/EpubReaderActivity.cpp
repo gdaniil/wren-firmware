@@ -774,7 +774,8 @@ void EpubReaderActivity::loop() {
   }
 
   if (atEndOfBook) {
-    pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && !isInReadFolder(epub->getPath());
+    pendingReadFolderMove =
+        !endOfBookDeleteRequested && SETTINGS.moveFinishedToReadFolder && !isInReadFolder(epub->getPath());
   } else {
     pendingReadFolderMove = false;
   }
@@ -798,9 +799,12 @@ void EpubReaderActivity::loop() {
   }
 
   {
-    RenderLock lock;
-    if (anyButtonPressed()) hints.input(millis());
-    if (hints.expire(millis())) requestUpdate();
+    // Try, not block: waiting out a render stops the input poll and loses short presses.
+    RenderLock lock(RenderLock::Mode::Try);
+    if (lock.ownsLock()) {
+      if (anyButtonPressed()) hints.input(millis());
+      if (hints.expire(millis())) requestUpdate();
+    }
   }
 
   // The toolbar reader menu owns all input while shown, ahead of the automatic page turn
@@ -899,9 +903,9 @@ void EpubReaderActivity::loop() {
     requestUpdate();
   }
 
-  // While the end-of-book suggestion menu is up it owns Confirm/Back/navigation, so it
+  // While the end-of-book menu is up it owns Confirm/Back/navigation, so it
   // gets this tick's input first and the long-press shortcuts below stay inert behind it
-  // -- a hold there must not drop a bookmark onto the suggestion screen or paint the
+  // -- a hold there must not drop a bookmark onto the end screen or paint the
   // dictionary word picker over it. Anything the menu does not handle (long-press Back to
   // the file browser, say) still falls through to the regular handlers.
   if (handleEndOfBookMenu()) {
@@ -994,7 +998,7 @@ void EpubReaderActivity::loop() {
   }
 
   const bool touchMenu = ReaderUtils::isTouchMenuGesture(renderer, mappedInput);
-  if (confirmReleased || touchMenu) {
+  if (!atEndOfBook && (confirmReleased || touchMenu)) {
     if (touchMenu) haptic_feedback::touchAction();
     // Toolbar style: the page is on screen and in the framebuffer, so paint the
     // toolbar over it (one refresh) instead of pushing a full-screen menu.
@@ -1053,7 +1057,7 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput);
+  auto [prevTriggered, nextTriggered, fromTilt] = ReaderUtils::detectPageTurn(mappedInput, !isAtEndOfBook());
   prevTriggered = prevTriggered || touch.prev;
   nextTriggered = nextTriggered || touch.next;
   if (!prevTriggered && !nextTriggered) {
@@ -1669,6 +1673,27 @@ bool EpubReaderActivity::remoteShortcut(const bool readerMenu) {
 }
 
 bool EpubReaderActivity::isAtEndOfBook() const { return epub && currentSpineIndex >= epub->getSpineItemsCount(); }
+
+void EpubReaderActivity::prepareForEndOfBookDelete() {
+  RenderLock lock;
+  endOfBookDeleteRequested = true;
+  pendingReadFolderMove = false;
+}
+
+void EpubReaderActivity::restartFromBeginning() {
+  RenderLock lock;
+  clearDeferredReposition();
+  currentSpineIndex = 0;
+  nextPageNumber = 0;
+  pendingPageJump.reset();
+  pendingOffsetJump.reset();
+  pendingAnchor.clear();
+  pendingPercentJump = false;
+  pendingSpineProgress = 0.0f;
+  currentPageVisibleOffset.reset();
+  pendingReadFolderMove = false;
+  section.reset();
+}
 
 void EpubReaderActivity::onReturnFromEndOfBook() {
   if (epub && epub->getSpineItemsCount() > 0) {

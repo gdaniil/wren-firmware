@@ -87,7 +87,7 @@ void WrenSetupSystemActivity::confirmClearCache() {
       delay(1200);
     }
     RenderLock lock;
-    fullRefresh = true;
+    cleanRefresh = true;
   });
 }
 void WrenSetupSystemActivity::change(int delta) {
@@ -100,7 +100,10 @@ void WrenSetupSystemActivity::change(int delta) {
     }
     case SystemRow::Language: {
       const auto language = LANGUAGES[cycle(languageChoice(), delta, 2)];
-      I18N.setLanguage(language);
+      {
+        RenderLock lock;
+        I18N.setLanguage(language);
+      }
       SETTINGS.language = static_cast<uint8_t>(language);
       SETTINGS.saveToFile();
       break;
@@ -122,7 +125,6 @@ void WrenSetupSystemActivity::change(int delta) {
 void WrenSetupSystemActivity::loop() {
   using B = MappedInputManager::Button;
   using namespace wren::setup;
-  RenderLock lock;
   const int visible = std::max(0, (renderer.getScreenHeight() - 88 - 132) / 54);
   if (wren::setup::swipeSelection(mappedInput, selected, 6, visible)) {
     requestUpdate();
@@ -137,7 +139,6 @@ void WrenSetupSystemActivity::loop() {
   int tx = 0, ty = 0;
   const bool tapped = mappedInput.wasScreenTapped(tx, ty);
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture() || (tapped && ty >= 28 && ty < 68)) {
-    lock.unlock();
     close();
     return;
   }
@@ -149,11 +150,9 @@ void WrenSetupSystemActivity::loop() {
         child = makeUniqueNoThrow<WrenWifiActivity>(renderer, mappedInput, false);
         break;
       case SystemRow::ClearCache:
-        lock.unlock();
         confirmClearCache();
         return;
       case SystemRow::Rebuild:
-        lock.unlock();
         if (changed) SETTINGS.saveToFile();
         library::markLibraryIndexDirty();
         activityManager.goHome();
@@ -171,7 +170,6 @@ void WrenSetupSystemActivity::loop() {
       return;
     }
     const bool wifi = static_cast<SystemRow>(selected) == SystemRow::Wifi;
-    lock.unlock();
     startActivityForResult(std::move(child), [this, wifi](const ActivityResult&) {
       if (wifi) {
         // This credential-only child has no session to inherit its radio.
@@ -184,7 +182,7 @@ void WrenSetupSystemActivity::loop() {
         }
       }
       RenderLock lock;
-      fullRefresh = true;
+      cleanRefresh = true;
     });
     return;
   }
@@ -201,8 +199,8 @@ void WrenSetupSystemActivity::loop() {
 }
 void WrenSetupSystemActivity::render(RenderLock&&) {
   drawPage();
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }
 void WrenSetupSystemActivity::drawPage() {
   using namespace wren::ui;

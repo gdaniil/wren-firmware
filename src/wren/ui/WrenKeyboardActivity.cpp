@@ -167,17 +167,11 @@ void WrenKeyboardActivity::onEnter() {
   symbols = false;
   urlPanel = false;
   cursorMode = false;
-  togglePos = false;
-  passwordVisible = false;
   selRow = 0;
   selCol = 0;
   delPressCount = 0;
   hintVisible = false;
   hintShowTime = 0;
-  rightHeld = false;
-  rightLongHandled = false;
-  savedCursorPos = 0;
-  rightStartCursorPos = 0;
   touchRouter.reset();
   touchRouter.holdMs = TOUCH_LONG_PRESS_MS;
   touchRouter.overrideHoldMs = TOUCH_DEL_LONG_PRESS_MS;
@@ -251,14 +245,6 @@ void WrenKeyboardActivity::clampSelection() {
 void WrenKeyboardActivity::moveSelectionRow(const int delta) {
   const fui::KeyboardLayout& layout = currentLayout();
   if (layout.rowCount == 0) return;
-  if (switchFocus) {
-    if (delta > 0) switchFocus = false;
-    return;
-  }
-  if (inputType == InputType::Password && selRow == 0 && delta < 0) {
-    switchFocus = true;
-    return;
-  }
   const int oldCols = selRow < layout.rowCount ? rowCount(selRow) : 1;
   selRow = (selRow + delta + layout.rowCount) % layout.rowCount;
   const int newCols = rowCount(selRow);
@@ -307,6 +293,7 @@ size_t WrenKeyboardActivity::utf8Next(const std::string& s, size_t pos) {
 }
 
 void WrenKeyboardActivity::insertUtf8(const char* out) {
+  RenderLock lock(*this);
   if (!out || !*out) return;
   const size_t n = strlen(out);
   if (maxLength != 0 && text.length() + n > maxLength) return;
@@ -316,6 +303,7 @@ void WrenKeyboardActivity::insertUtf8(const char* out) {
 }
 
 bool WrenKeyboardActivity::backspaceUtf8() {
+  RenderLock lock(*this);
   if (text.empty() || cursorPos == 0) return false;
   const size_t prev = utf8Prev(text, cursorPos);
   text.erase(prev, cursorPos - prev);
@@ -325,14 +313,17 @@ bool WrenKeyboardActivity::backspaceUtf8() {
 
 bool WrenKeyboardActivity::activateValue(const int16_t value, const bool longPress) {
   switch (value) {
-    case fui::QWERTY_KEY_SHIFT:
+    case fui::QWERTY_KEY_SHIFT: {
+      RenderLock lock(*this);
       delPressCount = 0;
       hintVisible = false;
       // Letters: case toggle. Symbols: pages between "?123" and "#+=".
       shifted = !shifted;
       clampSelection();
       return true;
-    case fui::QWERTY_KEY_MODE:
+    }
+    case fui::QWERTY_KEY_MODE: {
+      RenderLock lock(*this);
       delPressCount = 0;
       hintVisible = false;
       if (urlPanel) {
@@ -343,7 +334,9 @@ bool WrenKeyboardActivity::activateValue(const int16_t value, const bool longPre
       }
       clampSelection();
       return true;
+    }
     case fui::QWERTY_KEY_LANG: {
+      RenderLock lock(*this);
       delPressCount = 0;
       hintVisible = false;
       const fui::KeyboardLayoutId nextId = keyboard_layouts::next(layoutId);
@@ -358,7 +351,8 @@ bool WrenKeyboardActivity::activateValue(const int16_t value, const bool longPre
       clampSelection();
       return true;
     }
-    case URL_PANEL_KEY:
+    case URL_PANEL_KEY: {
+      RenderLock lock(*this);
       delPressCount = 0;
       hintVisible = false;
       urlPanel = !urlPanel;
@@ -366,11 +360,19 @@ bool WrenKeyboardActivity::activateValue(const int16_t value, const bool longPre
       shifted = false;
       clampSelection();
       return true;
-    case fui::QWERTY_KEY_ENTER:
-      onComplete(text);
+    }
+    case fui::QWERTY_KEY_ENTER: {
+      std::string result;
+      {
+        RenderLock lock(*this);
+        result = text;
+      }
+      onComplete(std::move(result));
       return false;
+    }
     case fui::QWERTY_KEY_BACKSPACE:
       if (longPress) {
+        RenderLock lock(*this);
         text.clear();
         cursorPos = 0;
         return true;
@@ -394,6 +396,7 @@ bool WrenKeyboardActivity::activateValue(const int16_t value, const bool longPre
       if (!out) return false;
       insertUtf8(out);
       if (shifted && !symbols) {
+        RenderLock lock(*this);
         shifted = false;  // shift auto-releases after one character
         clampSelection();
       }
@@ -406,6 +409,7 @@ bool WrenKeyboardActivity::clearAllOrAltOnSelected() {
   const fui::KeyboardKey* key = selectedKey();
   if (!key) return false;
   if (key->value == fui::QWERTY_KEY_BACKSPACE) {
+    RenderLock lock(*this);
     text.clear();
     cursorPos = 0;
     return true;
@@ -430,11 +434,6 @@ fui::Rect WrenKeyboardActivity::keyboardRect() const {
 
 int WrenKeyboardActivity::caretAdvance(size_t position) {
   position = std::min(position, text.size());
-  if (inputType == InputType::Password && !passwordVisible) {
-    int width = 0;
-    for (size_t i = 0; i < position; i = utf8Next(text, i)) width += 12;
-    return width;
-  }
   const bool rtl = BidiUtils::detectParagraphLevel(text.c_str()) != 0;
   const int total = rtl ? renderer.getTextAdvanceX(WREN_GOLOS_32_FONT_ID, text.c_str(), EpdFontFamily::REGULAR) : 0;
   const char saved = text[position];
@@ -446,6 +445,7 @@ int WrenKeyboardActivity::caretAdvance(size_t position) {
 
 bool WrenKeyboardActivity::cursorPositionFromPoint(int x, int y, size_t& position) {
   if (y < 180 || y >= 240 || x < 20 || x >= renderer.getScreenWidth() - 20) return false;
+  RenderLock lock(*this);
   const int target = x - 36 + fieldScroll;
   int best = 0x7fffffff;
   for (size_t i = 0;; i = utf8Next(text, i)) {
@@ -460,21 +460,21 @@ bool WrenKeyboardActivity::cursorPositionFromPoint(int x, int y, size_t& positio
 }
 
 void WrenKeyboardActivity::loop() {
-  RenderLock lock(*this);
   int tx = 0;
   int ty = 0;
 
   size_t touchedCursorPos = 0;
   if (mappedInput.wasScreenTapped(tx, ty) && cursorPositionFromPoint(tx, ty, touchedCursorPos)) {
     haptic_feedback::touchAction();
-    cursorPos = std::min(touchedCursorPos, text.length());
-    // The masked text field maps taps per byte; snap back to a boundary so
-    // the cursor never lands inside a multi-byte character.
-    while (cursorPos > 0 && cursorPos < text.length() && (static_cast<uint8_t>(text[cursorPos]) & 0xC0) == 0x80) {
-      cursorPos--;
+    {
+      RenderLock lock(*this);
+      cursorPos = std::min(touchedCursorPos, text.length());
+      // Keep the cursor on a UTF-8 boundary.
+      while (cursorPos > 0 && cursorPos < text.length() && (static_cast<uint8_t>(text[cursorPos]) & 0xC0) == 0x80) {
+        cursorPos--;
+      }
     }
     cursorMode = false;
-    togglePos = false;
     hintVisible = false;
     touchRouter.reset();
     requestUpdate();
@@ -494,14 +494,6 @@ void WrenKeyboardActivity::loop() {
         touchRouter.update(interactions, pressedDown, static_cast<int16_t>(tx), static_cast<int16_t>(ty), tapped,
                            static_cast<int16_t>(tapX), static_cast<int16_t>(tapY), inContact, millis());
     if (result.event) {
-      if (result.event.value == -5) {
-        switchFocus = true;
-        selRow = 0;
-        passwordVisible = !passwordVisible;
-        requestUpdate();
-        return;
-      }
-      switchFocus = false;
       syncSelectionToValue(result.event.value);
       if (activateValue(result.event.value, result.event.longPress)) {
         haptic_feedback::touchAction(result.event.longPress);
@@ -517,12 +509,13 @@ void WrenKeyboardActivity::loop() {
     }
   }
 
-  if (!cursorMode && mappedInput.wasPressed(MappedInputManager::Button::Up)) {
+  // Front up/down move rows; side left/right move columns or the caret.
+  if (!cursorMode && mappedInput.wasPressed(MappedInputManager::Button::Left)) {
     upHeld = true;
     upLongHandled = false;
   }
 
-  if (upHeld && !upLongHandled && mappedInput.isPressed(MappedInputManager::Button::Up) &&
+  if (upHeld && !upLongHandled && mappedInput.isPressed(MappedInputManager::Button::Left) &&
       mappedInput.getHeldTime() > LONG_PRESS_MS) {
     cursorMode = true;
     upLongHandled = true;
@@ -531,7 +524,7 @@ void WrenKeyboardActivity::loop() {
     requestUpdate();
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
     if (upHeld && !upLongHandled && !cursorMode) {
       moveSelectionRow(-1);
       requestUpdate();
@@ -540,10 +533,9 @@ void WrenKeyboardActivity::loop() {
     upLongHandled = false;
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+  if (mappedInput.wasPressed(MappedInputManager::Button::Right)) {
     downHeld = true;
     if (cursorMode) {
-      togglePos = false;
       cursorMode = false;
       hintVisible = false;
       downLongHandled = true;
@@ -553,7 +545,7 @@ void WrenKeyboardActivity::loop() {
     }
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
     if (downHeld && !downLongHandled && !cursorMode) {
       moveSelectionRow(1);
       requestUpdate();
@@ -562,61 +554,33 @@ void WrenKeyboardActivity::loop() {
     downLongHandled = false;
   }
 
-  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left}, [this] {
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this] {
     if (cursorMode) return;
     moveSelectionCol(-1);
     requestUpdate();
   });
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-    if (cursorMode) {
-      if (togglePos) {
-        cursorPos = savedCursorPos;
-        togglePos = false;
-        requestUpdate();
-      } else if (cursorPos > 0) {
-        cursorPos = utf8Prev(text, cursorPos);
-        requestUpdate();
-      }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    if (cursorMode && cursorPos > 0) {
+      RenderLock lock(*this);
+      cursorPos = utf8Prev(text, cursorPos);
+      requestUpdate();
     }
   }
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-    if (cursorMode && inputType == InputType::Password && !togglePos) {
-      rightHeld = true;
-      rightLongHandled = false;
-      rightStartCursorPos = cursorPos;
-    }
-  }
-
-  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right}, [this] {
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [this] {
     if (cursorMode) return;
     moveSelectionCol(1);
     requestUpdate();
   });
 
-  if (rightHeld && !rightLongHandled && mappedInput.isPressed(MappedInputManager::Button::Right) &&
-      mappedInput.getHeldTime() > LONG_PRESS_MS) {
-    if (cursorMode && inputType == InputType::Password && !togglePos) {
-      savedCursorPos = rightStartCursorPos;
-      togglePos = true;
-      rightLongHandled = true;
-      requestUpdate();
-    }
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-    if (cursorMode && inputType == InputType::Password) {
-      rightHeld = false;
-      rightLongHandled = false;
-    }
-    if (cursorMode && !togglePos && cursorPos < text.length()) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    if (cursorMode && cursorPos < text.length()) {
+      RenderLock lock(*this);
       cursorPos = utf8Next(text, cursorPos);
       requestUpdate();
     }
     if (cursorMode) return;
-    rightHeld = false;
-    rightLongHandled = false;
   }
 
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
@@ -625,7 +589,7 @@ void WrenKeyboardActivity::loop() {
   }
 
   const fui::KeyboardKey* selKey = selectedKey();
-  const bool selectedDel = !switchFocus && selKey && selKey->value == fui::QWERTY_KEY_BACKSPACE;
+  const bool selectedDel = selKey && selKey->value == fui::QWERTY_KEY_BACKSPACE;
 
   if (confirmHeld && !confirmLongHandled && mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() > DEL_LONG_PRESS_MS && selectedDel) {
@@ -636,7 +600,7 @@ void WrenKeyboardActivity::loop() {
 
   if (confirmHeld && !confirmLongHandled && mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() > LONG_PRESS_MS) {
-    if (!switchFocus && !selectedDel && clearAllOrAltOnSelected()) {
+    if (!selectedDel && clearAllOrAltOnSelected()) {
       requestUpdate();
       confirmLongHandled = true;
     }
@@ -644,15 +608,9 @@ void WrenKeyboardActivity::loop() {
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     if (confirmHeld && !confirmLongHandled && !cursorMode) {
-      if (switchFocus) {
-        passwordVisible = !passwordVisible;
-        requestUpdate();
-      } else if (selKey && activateValue(selKey->value, false)) {
+      if (selKey && activateValue(selKey->value, false)) {
         requestUpdate();
       }
-    } else if (confirmHeld && !confirmLongHandled && cursorMode && inputType == InputType::Password && togglePos) {
-      passwordVisible = !passwordVisible;
-      requestUpdate();
     }
     confirmHeld = false;
     confirmLongHandled = false;
@@ -680,34 +638,12 @@ void WrenKeyboardActivity::render(RenderLock&&) {
   const int caret = caretAdvance(cursorPos);
   fieldScroll = keyboard::scrollOffset(fieldScroll, caret, 3, viewport);
   renderer.setClipRect(36, fieldY + 3, viewport, 54);
-  int x = 36 - fieldScroll;
-  if (inputType != InputType::Password || passwordVisible) {
-    renderer.drawText(WREN_GOLOS_32_FONT_ID, x, fieldY + 10, text.c_str());
-  } else {
-    for (size_t i = 0; i < text.size(); i = utf8Next(text, i)) {
-      renderer.fillRect(x + 3, fieldY + 27, 6, 6, true);
-      x += 12;
-    }
-  }
+  renderer.drawText(WREN_GOLOS_32_FONT_ID, 36 - fieldScroll, fieldY + 10, text.c_str());
   renderer.fillRect(36 + caret - fieldScroll, fieldY + 14, 3, 32, true);
   wren::setup::unclip(renderer);
 
   interactions.beginPublishCycle();
   interactions.clear();
-  if (inputType == InputType::Password) {
-    const int sy = 254;
-    if (switchFocus) renderer.fillRect(17, sy - 3, width - 34, 32, true);
-    const bool ink = !switchFocus;
-    renderer.drawRect(20, sy, 48, 26, 3, ink);
-    if (passwordVisible) renderer.fillRect(23, sy + 3, 42, 20, ink);
-    renderer.fillRect(20 + (passwordVisible ? 28 : 6), sy + 6, 14, 14, passwordVisible ? !ink : ink);
-    renderer.drawText(WREN_GOLOS_18_FONT_ID, 80, sy + 3, tr(STR_WREN_KB_SHOW_PASSWORD), ink);
-    interactions.addInteraction({{20, static_cast<int16_t>(sy), static_cast<int16_t>(width - 40), 26},
-                                 ACTION_KEY,
-                                 -5,
-                                 static_cast<uint16_t>(fui::InputTouch | fui::InputLongPress),
-                                 fui::StateNormal});
-  }
   const auto& layout = currentLayout();
   const auto bounds = keyboardRect();
   const int rowHeight = width > renderer.getScreenHeight() ? 40 : 44;
@@ -738,7 +674,7 @@ void WrenKeyboardActivity::render(RenderLock&&) {
       const int top = bounds.y + r * (rowHeight + 4);
       used += weight;
       ++visible;
-      const bool selected = !switchFocus && !cursorMode && selRow == r && selCol == c;
+      const bool selected = !cursorMode && selRow == r && selCol == c;
       const bool solid = selected || key.value == fui::QWERTY_KEY_ENTER;
       renderer.fillRect(left, top, keyWidth, rowHeight, solid);
       renderer.drawRect(left, top, keyWidth, rowHeight, 2, true);

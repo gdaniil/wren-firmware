@@ -55,7 +55,6 @@ bool WrenReaderMenuActivity::handleHomeGesture() {
 }
 void WrenReaderMenuActivity::loop() {
   using Button = MappedInputManager::Button;
-  RenderLock lock;
   uint32_t now = millis();
   if (added && !wren::reader::within(now, addedAt, 1500)) {
     added = false;
@@ -66,12 +65,12 @@ void WrenReaderMenuActivity::loop() {
     requestUpdate();
   }
   if (mappedInput.wasReleased(Button::Back)) {
-    lock.unlock();
     close(true);
     return;
   }
   if (mappedInput.wasReleased(Button::Confirm)) {
     if (actions[selected] == Action::ROTATE_SCREEN) {
+      RenderLock lock;
       orientation = wren::reader::toggleOrientation(orientation);
       ReaderUtils::applyOrientation(renderer, orientation);
       requestUpdate(true);
@@ -80,7 +79,6 @@ void WrenReaderMenuActivity::loop() {
       confirmAt = now;
       requestUpdate();
     } else {
-      lock.unlock();
       close(false);
     }
     return;

@@ -1,10 +1,14 @@
 #pragma once
 #include "activities/Activity.h"
 
+namespace wren::ui {
+bool deleteBookFromCard(const std::string& path);
+}
+
 class WrenDeleteDialog final : public Activity {
  public:
   WrenDeleteDialog(GfxRenderer& r, MappedInputManager& i, const std::string& path, const std::string& title,
-                   void (*paintBackground)(void*), void* backgroundContext);
+                   void (*paintBackground)(void*), void* backgroundContext, bool deferRemoval = false);
   // Confirm-only variant for non-file actions: no path, no size row, nothing is deleted. Confirm
   // finishes with a non-cancelled result and the caller does the work. Text pointers must outlive
   // the dialog (tr() strings do).
@@ -25,6 +29,7 @@ class WrenDeleteDialog final : public Activity {
   void (*paintBackground)(void*);
   void* backgroundContext;
   bool failed = false;
+  bool deferRemoval = false;
   // Set only by the confirm-only constructor.
   const char* customHeading = nullptr;
   const char* customBody = nullptr;

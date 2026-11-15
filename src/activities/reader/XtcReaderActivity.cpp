@@ -266,6 +266,11 @@ bool XtcReaderActivity::skipPages(int amount) {
 
 bool XtcReaderActivity::isAtEndOfBook() const { return xtc && currentPage >= xtc->getPageCount(); }
 
+void XtcReaderActivity::restartFromBeginning() {
+  RenderLock lock;
+  currentPage = 0;
+}
+
 void XtcReaderActivity::onReturnFromEndOfBook() {
   if (xtc && xtc->getPageCount() > 0) {
     currentPage = xtc->getPageCount() - 1;

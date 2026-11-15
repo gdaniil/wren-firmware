@@ -15,7 +15,7 @@ class WrenSetupDisplayActivity final : public Activity {
   void close();
   int selected = 0;
   int start = 0;
-  bool fullRefresh = true;
+  bool cleanRefresh = true;
   bool changed = false;
   ButtonNavigator navigator{250, 500};
 };

@@ -17,6 +17,7 @@ struct Row {
   bool selected = false;
   bool on = false;
   bool uppercaseValue = true;
+  const Icon* leadingIcon = nullptr;
 };
 enum class TabKind { Empty, Text, ArrowUp, ArrowDown };
 struct Tab {

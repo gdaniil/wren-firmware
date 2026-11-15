@@ -47,7 +47,6 @@ void WrenSetupDisplayActivity::change(int delta) {
 }
 void WrenSetupDisplayActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   const int visible = std::max(0, (renderer.getScreenHeight() - 40 - 132) / 54);
   if (wren::setup::swipeSelection(mappedInput, selected, wren::setup::displayRowCount(BoardConfig::hasTouch()),
                                   visible)) {
@@ -64,7 +63,6 @@ void WrenSetupDisplayActivity::loop() {
   int tx = 0, ty = 0;
   const bool tapped = mappedInput.wasScreenTapped(tx, ty);
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture() || (tapped && ty >= 28 && ty < 68)) {
-    lock.unlock();
     close();
     return;
   }
@@ -129,6 +127,6 @@ void WrenSetupDisplayActivity::render(RenderLock&&) {
   }
   unclip(renderer);
   footer(renderer);
-  renderer.displayBuffer(fullRefresh ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
-  fullRefresh = false;
+  renderer.displayBuffer(cleanRefresh ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+  cleanRefresh = false;
 }

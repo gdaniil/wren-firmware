@@ -143,9 +143,12 @@ void WrenBookmarksActivity::openSelectedBookmark() {
 
 void WrenBookmarksActivity::deleteSelectedBookmark() {
   if (bookmarks.empty()) return;
-  bookmarks.erase(bookmarks.begin() + selected);
+  {
+    RenderLock lock;
+    bookmarks.erase(bookmarks.begin() + selected);
+    rebuildWindow();
+  }
   if (!BookmarkFile::save(epubPath, bookmarks)) LOG_ERR("WBM", "Failed to save bookmarks after delete");
-  rebuildWindow();
   requestUpdate();
 }
 
@@ -154,13 +157,15 @@ void WrenBookmarksActivity::move(int delta) {
   int next = std::clamp(selected + delta, 0, static_cast<int>(bookmarks.size()) - 1);
   if (next == selected) return;
   selected = next;
-  if (selected < start || selected >= start + static_cast<int>(rows.size())) rebuildWindow();
+  if (selected < start || selected >= start + static_cast<int>(rows.size())) {
+    RenderLock lock;
+    rebuildWindow();
+  }
   requestUpdate();
 }
 
 void WrenBookmarksActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   if (mappedInput.wasLongPressed(B::Back, 1000)) {
     deleteSelectedBookmark();
     return;
@@ -219,6 +224,6 @@ void WrenBookmarksActivity::render(RenderLock&&) {
                        {empty ? TabKind::Empty : TabKind::ArrowUp},
                        {empty ? TabKind::Empty : TabKind::ArrowDown}};
   drawButtonTabs(renderer, tabs);
-  renderer.displayBuffer(first ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
+  renderer.displayBuffer(first ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   first = false;
 }

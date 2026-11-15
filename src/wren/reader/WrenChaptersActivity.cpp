@@ -43,7 +43,6 @@ void WrenChaptersActivity::move(int delta, bool wrap) {
 }
 void WrenChaptersActivity::loop() {
   using B = MappedInputManager::Button;
-  RenderLock lock;
   if (mappedInput.wasReleased(B::Back)) {
     cancel();
     return;
@@ -58,7 +57,11 @@ void WrenChaptersActivity::loop() {
       finish();
       return;
     }
-    auto item = epub->getTocItem(selected);
+    // The metadata file has a shared seek position with render().
+    auto item = [this] {
+      RenderLock lock;
+      return epub->getTocItem(selected);
+    }();
     if (item.spineIndex < 0) {
       cancel();
       return;
@@ -105,6 +108,6 @@ void WrenChaptersActivity::render(RenderLock&&) {
                        {TabKind::ArrowDown}};
   drawButtonTabs(renderer, tabs);
   drawEdgeTabs(renderer, true, true);
-  renderer.displayBuffer(first ? HalDisplay::FULL_REFRESH : HalDisplay::FAST_REFRESH);
+  renderer.displayBuffer(first ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
   first = false;
 }

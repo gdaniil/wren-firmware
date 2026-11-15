@@ -166,6 +166,38 @@ ICONS = [
      "M7 21h1v4h-1zM10 21h1v1h-1zM8 22h1v4h-1zM11 22h1v1h-1zM9 23h2v3h-2zM12 23h2v3h-2zM17 23h1v1h-1z"
      "M11 24h1v6h-1zM14 24h1v2h-1zM2 25h1v2h-1zM15 25h1v5h-1zM9 29h2v1h-2zM13 29h2v1h-2z"),
     ("WakeArrow", 9, 12, "M4 0h1v1h-1zM3 1h3v1h-3zM2 2h5v1h-5zM1 3h7v1h-7zM4 4h1v4h-1z"),
+    # Library tab header: wren-classic from wren-icons/source/wren_icons.json.
+    ("WrenClassic", 32, 32,
+     "M3 4h3v1h-3zM3 5h4v1h-4zM3 6h5v1h-5zM21 6h1v1h-1zM3 7h5v1h-5zM18 7h7v1h-7zM3 8h6v1h-6zM17 8h9v1h-9z"
+     "M3 9h6v1h-6zM17 9h9v1h-9zM3 10h7v1h-7zM16 10h6v1h-6zM24 10h3v1h-3zM4 11h7v1h-7zM16 11h6v1h-6z"
+     "M24 11h6v1h-6zM4 12h7v1h-7zM12 12h18v1h-18zM5 13h22v1h-22zM5 14h21v1h-21zM6 15h20v1h-20z"
+     "M7 16h18v1h-18zM6 17h4v1h-4zM12 17h12v1h-12zM6 18h3v1h-3zM10 18h1v1h-1zM13 18h11v1h-11zM6 19h4v1h-4z"
+     "M12 19h1v1h-1zM15 19h9v1h-9zM6 20h5v1h-5zM13 20h2v1h-2zM17 20h7v1h-7zM7 21h6v1h-6zM14 21h2v1h-2z"
+     "M18 21h5v1h-5zM7 22h7v1h-7zM15 22h3v1h-3zM19 22h4v1h-4zM8 23h14v1h-14zM9 24h12v1h-12zM12 25h6v1h-6z"
+     "M19 25h1v1h-1zM14 26h1v1h-1zM19 26h1v1h-1zM14 27h1v1h-1zM19 27h1v1h-1zM14 28h1v1h-1zM19 28h1v1h-1z"
+     "M12 29h3v1h-3zM17 29h3v1h-3z"),
+    # Tab header (send tab), from the design canvas.
+    ("WrenSend", 32, 32,
+     "M21 1h8v1h-8zM19 2h3v1h-3zM28 2h3v1h-3zM18 3h2v1h-2zM30 3h2v1h-2zM17 4h2v1h-2zM22 4h6v1h-6z"
+     "M31 4h1v1h-1zM20 5h3v1h-3zM27 5h3v1h-3zM20 6h1v1h-1zM29 6h1v1h-1zM23 7h4v1h-4zM22 8h2v1h-2z"
+     "M26 8h2v1h-2zM2 9h3v1h-3zM2 10h4v1h-4zM24 10h2v1h-2zM2 11h5v1h-5zM15 11h5v1h-5zM24 11h2v1h-2z"
+     "M2 12h5v1h-5zM14 12h7v1h-7zM2 13h6v1h-6zM13 13h4v1h-4zM19 13h2v1h-2zM3 14h5v1h-5zM13 14h4v1h-4z"
+     "M19 14h4v1h-4zM4 15h20v1h-20zM4 16h17v1h-17zM5 17h16v1h-16zM5 18h15v1h-15zM5 19h2v1h-2z"
+     "M9 19h10v1h-10zM5 20h2v1h-2zM11 20h8v1h-8zM5 21h3v1h-3zM10 21h1v1h-1zM13 21h6v1h-6zM5 22h4v1h-4z"
+     "M11 22h1v1h-1zM14 22h5v1h-5zM6 23h5v1h-5zM12 23h2v1h-2zM15 23h3v1h-3zM7 24h10v1h-10zM8 25h8v1h-8z"
+     "M11 26h1v1h-1zM15 26h1v1h-1zM11 27h1v1h-1zM15 27h1v1h-1zM11 28h1v1h-1zM15 28h1v1h-1zM9 29h3v1h-3z"
+     "M13 29h3v1h-3z"),
+    # Tab header (setup tab), from the design canvas.
+    ("WrenSetup", 32, 32,
+     "M24 0h3v1h-3zM21 1h2v1h-2zM24 1h3v1h-3zM28 1h2v1h-2zM21 2h2v1h-2zM24 2h3v1h-3zM28 2h2v1h-2z"
+     "M23 3h5v1h-5zM22 4h2v1h-2zM27 4h4v1h-4zM20 5h4v1h-4zM27 5h4v1h-4zM20 6h4v1h-4zM27 6h4v1h-4z"
+     "M23 7h5v1h-5zM21 8h2v1h-2zM24 8h3v1h-3zM28 8h2v1h-2zM2 9h3v1h-3zM21 9h2v1h-2zM24 9h3v1h-3z"
+     "M28 9h2v1h-2zM2 10h4v1h-4zM24 10h3v1h-3zM2 11h5v1h-5zM15 11h5v1h-5zM2 12h5v1h-5zM14 12h7v1h-7z"
+     "M2 13h6v1h-6zM13 13h4v1h-4zM19 13h2v1h-2zM3 14h5v1h-5zM13 14h4v1h-4zM19 14h4v1h-4zM4 15h20v1h-20z"
+     "M4 16h17v1h-17zM5 17h16v1h-16zM5 18h15v1h-15zM5 19h2v1h-2zM9 19h10v1h-10zM5 20h2v1h-2zM11 20h8v1h-8z"
+     "M5 21h3v1h-3zM10 21h1v1h-1zM13 21h6v1h-6zM5 22h4v1h-4zM11 22h1v1h-1zM14 22h5v1h-5zM6 23h5v1h-5z"
+     "M12 23h2v1h-2zM15 23h3v1h-3zM7 24h10v1h-10zM8 25h8v1h-8zM11 26h1v1h-1zM15 26h1v1h-1zM11 27h1v1h-1z"
+     "M15 27h1v1h-1zM11 28h1v1h-1zM15 28h1v1h-1zM9 29h3v1h-3zM13 29h3v1h-3z"),
 ]
 
 RECT = re.compile(r"M(\d+) (\d+)h(\d+)v(\d+)h-(\d+)z")
