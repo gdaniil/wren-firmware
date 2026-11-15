@@ -1,52 +1,29 @@
-import { ReaderFlasher, MODELS } from './lib/flasher.js';
+import { ReaderFlasher } from './lib/flasher.js';
 
 const $ = id => document.getElementById(id);
-let flasher = null;
-let busy = false;
-let backedUp = false;
-let completed = false;
 const choices = document.querySelectorAll('input[name="model"]');
 const selectedModel = () => document.querySelector('input[name="model"]:checked')?.value;
 const files = { c3: 'firmware.bin', x4c: 'firmware-x4c.bin', x4pro: 'firmware-x4pro.bin' };
-const backupNames = { c3: 'x3-x4', x4c: 'x4c', x4pro: 'x4pro' };
-const cableHint = model => (model === 'c3'
-  ? 'Use a data cable: the 4-pin magnetic cable on X3, USB-C on X4. The 2-pin X3 cable only charges.'
-  : 'Use a data cable that came with the reader.') + ' Wake the reader first.';
-const supported = Boolean(navigator.serial);
-$('unsupported').hidden = supported;
-$('flow').hidden = !supported;
+const defaultError = 'unplug the cable, wake the reader, plug it back in and try again';
+let port = null;
+let flasher = null;
+let busy = false;
 
-fetch('./firmware.json', { cache: 'no-store' }).then(response => {
-  if (!response.ok) throw new Error('Build information unavailable');
-  return response.json();
-}).then(build => {
-  if (build.source_url) $('source-link').href = build.source_url;
-  if (build.fonts_bytes) $('fonts-link').textContent = `Download fonts · ${(build.fonts_bytes / 1e6).toFixed(1)} MB`;
-  $('build').textContent = `Build ${build.short_sha} · ${new Date(build.built_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`;
-}).catch(() => { $('build').textContent = 'Firmware build information unavailable.'; });
-
-function render() {
-  const ready = backedUp || $('already').checked;
-  $('connect').hidden = Boolean(flasher) || completed;
-  $('connect').disabled = busy || !selectedModel();
-  for (const choice of choices) choice.disabled = busy || Boolean(flasher) || completed;
-  $('backup-step').hidden = !flasher || completed;
-  $('backup').hidden = backedUp;
-  $('backup').disabled = busy;
-  $('backup').classList.toggle('secondary', ready);
-  $('already').disabled = busy;
-  $('install').disabled = busy || !ready;
-  $('install').classList.toggle('secondary', !ready);
-  if (flasher && !completed) {
-    $('step').textContent = `Step ${ready ? 3 : 2} of 3`;
-    $('heading').textContent = ready ? 'Install Wren' : 'Keep a copy of your reader';
-    $('hint').textContent = ready ? 'Keep the cable connected until installation finishes.' : 'Save the full 16 MB flash before installing. Keep the downloaded file somewhere safe.';
-  }
+function preventUnload(event) { event.preventDefault(); }
+function setState(name) {
+  window.removeEventListener('beforeunload', preventUnload);
+  $('installer').dataset.state = name;
+  $('status').textContent = '';
+  if (name === 'installing') window.addEventListener('beforeunload', preventUnload);
 }
 function progress(value) {
-  $('progress-wrap').hidden = false;
   $('progress').value = value;
   $('percent').textContent = `${Math.floor(value)}%`;
+}
+function setBusy(value) {
+  busy = value;
+  $('install').disabled = value;
+  for (const choice of choices) choice.disabled = value;
 }
 async function release() {
   const current = flasher;
@@ -55,78 +32,91 @@ async function release() {
 }
 async function fail(error, action) {
   await release();
-  backedUp = false;
-  $('already').checked = false;
-  $('heading').textContent = 'Connection ended';
-  $('step').textContent = 'Step 1 of 3';
-  $('hint').textContent = 'Unplug the cable, wake the reader, reconnect it, and try again.';
-  const message = error?.message || 'The connection was interrupted';
-  $('status').textContent = (message.startsWith('This reader is locked.') || message.startsWith('This is an X4 Classic or X4 Pro.') || message.startsWith('This is an X3 or X4.') || message === 'This reader is not supported.') ? message : `${action} failed: ${message.replace(/[.!?]+$/, '')}; unplug and reconnect the reader, close other serial apps, and try again.`;
+  const message = error?.message || 'the connection was interrupted';
+  setState('error');
+  $('error-text').textContent = defaultError;
+  $('retry').hidden = false;
+  if (message.startsWith('This reader is locked.')) {
+    $('error-text').textContent = 'this reader is locked, so wren cannot be installed.';
+    $('retry').hidden = true;
+  } else if (message === 'This reader is not supported.' || message === 'This reader does not have 16 MB of flash.') {
+    $('error-text').textContent = 'this reader is not supported.';
+    $('retry').hidden = true;
+  } else {
+    $('status').textContent = `${action} failed: ${message.charAt(0).toLowerCase()}${message.slice(1)}`;
+  }
 }
-$('already').addEventListener('change', render);
-for (const choice of choices) choice.addEventListener('change', () => {
-  $('heading').textContent = 'Connect your reader';
-  $('hint').textContent = cableHint(selectedModel());
-  $('status').textContent = '';
-  render();
-});
+
+fetch('./firmware.json', { cache: 'no-store' }).then(response => {
+  if (!response.ok) throw new Error('Build information unavailable');
+  return response.json();
+}).then(build => {
+  if (build.source_url) $('source-link').href = build.source_url;
+  if (build.fonts_bytes != null) $('fonts-label').textContent = `fonts.zip · ${(build.fonts_bytes / 1e6).toFixed(1)} mb`;
+}).catch(() => { /* Local preview has no firmware.json; keep the defaults. */ });
+
 $('connect').addEventListener('click', async () => {
-  const model = selectedModel();
-  if (busy || !model) return;
-  busy = true;
-  $('status').textContent = `Connecting and checking your ${model === 'c3' ? 'reader' : MODELS[model].name}…`;
-  render();
   try {
-    // Request the chooser before any await to preserve the user gesture.
-    const filter = model === 'c3' ? { usbVendorId: 0x303a, usbProductId: 0x1001 } : { usbVendorId: 0x303a };
-    const port = await navigator.serial.requestPort({ filters: [filter] });
-    flasher = new ReaderFlasher(port, model);
-    await flasher.connect();
-    $('status').textContent = `${model === 'c3' ? 'Reader' : MODELS[model].name} connected.`;
-  } catch (error) { await fail(error, 'Connection'); }
-  finally { busy = false; render(); }
-});
-$('backup').addEventListener('click', async () => {
-  if (busy || !flasher) return;
-  busy = true; render(); progress(0);
-  $('progress-label').textContent = 'Saving backup';
-  $('status').textContent = 'Reading the full flash; this may take several minutes.';
-  try {
-    const data = await flasher.backup(progress);
-    const url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${backupNames[selectedModel()]}-backup-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.bin`;
-    document.body.append(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    backedUp = true;
-    $('status').textContent = 'Backup downloaded. Check that you saved the file before installing.';
-  } catch (error) { await fail(error, 'Backup'); }
-  finally { busy = false; render(); }
-});
-$('install').addEventListener('click', async () => {
-  if (busy || !flasher || !(backedUp || $('already').checked)) return;
-  busy = true; render(); progress(0);
-  $('progress-label').textContent = 'Installing Wren';
-  $('status').textContent = 'Downloading and checking firmware…';
-  try {
-    const response = await fetch(`./${files[selectedModel()]}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error('Firmware could not be downloaded');
-    const data = new Uint8Array(await response.arrayBuffer());
-    $('status').textContent = 'Installing Wren. Keep the cable connected…';
-    await flasher.install(data, progress);
-    completed = true;
-    await release();
-    $('step').textContent = 'Step 3 of 3';
-    $('heading').textContent = 'Ready to read';
-    $('hint').textContent = '';
-    $('status').textContent = 'Done. Unplug the cable and press the power button to restart the reader. Then copy the reading fonts below to the SD card.';
-  } catch (error) { await fail(error, 'Installation'); }
-  finally { busy = false; render(); }
-});
-navigator.serial?.addEventListener('disconnect', async event => {
-  if (flasher && event.target === flasher.port && !busy) {
-    await fail(new Error('The reader was unplugged'), 'Connection'); render();
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    setState('choose');
+  } catch (error) {
+    if (error?.name !== 'NotFoundError') await fail(error, 'connection');
   }
 });
-render();
+$('install').addEventListener('click', async () => {
+  if (busy || !port) return;
+  setBusy(true);
+  $('status').textContent = 'checking your reader…';
+  let action = 'connection';
+  try {
+    const model = selectedModel();
+    flasher = new ReaderFlasher(port, model);
+    await flasher.connect();
+    action = 'installation';
+    setState('installing');
+    progress(0);
+    const response = await fetch(`./${files[model]}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('firmware could not be downloaded');
+    const data = new Uint8Array(await response.arrayBuffer());
+    await flasher.install(data, progress);
+    await release();
+    progress(100);
+    setState('done');
+  } catch (error) {
+    const message = error?.message || '';
+    if (action === 'connection' && (message.startsWith('This is an X4 Classic or X4 Pro.') || message.startsWith('This is an X3 or X4.'))) {
+      await release();
+      setState('choose');
+      $('status').textContent = message.startsWith('This is an X4 Classic or X4 Pro.')
+        ? 'this looks like an x4 classic or x4 pro. pick it and press install again'
+        : 'this looks like an x3 or x4. pick it and press install again';
+    } else {
+      await fail(error, action);
+    }
+  } finally { setBusy(false); }
+});
+$('retry').addEventListener('click', async () => {
+  await release();
+  port = null;
+  setState('connect');
+});
+navigator.serial?.addEventListener('disconnect', event => {
+  if (event.target === port && !busy && $('installer').dataset.state === 'choose') {
+    port = null;
+    setState('error');
+    $('error-text').textContent = defaultError;
+    $('retry').hidden = false;
+    $('status').textContent = 'the reader was unplugged';
+  }
+});
+
+const phone = (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches)
+  || /Android|iPhone|iPad|Mobile/.test(navigator.userAgent);
+setState(navigator.serial ? 'connect' : phone ? 'phone' : 'unsupported');
+const preview = new URLSearchParams(location.search).get('state');
+if (['localhost', '127.0.0.1'].includes(location.hostname)
+    && ['unsupported', 'phone', 'connect', 'choose', 'installing', 'done', 'error'].includes(preview)) {
+  setState(preview);
+  if (preview === 'installing') progress(22);
+  if (preview === 'done') progress(100);
+}

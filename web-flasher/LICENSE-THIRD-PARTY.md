@@ -14,6 +14,10 @@ The firmware files offered by this page have their own license files
 `wren-fonts.zip` are under the SIL Open Font License 1.1; each font folder carries
 its `OFL.txt`.
 
+The page itself uses Literata and IBM Plex Mono web fonts (`assets/fonts/`, from the
+Fontsource 5.1.0 packages), both under the SIL Open Font License 1.1. The license
+texts are `assets/fonts/OFL-literata.txt` and `assets/fonts/OFL-ibm-plex-mono.txt`.
+
 The installer code below keeps the crosspoint-tools MIT notice:
 
 MIT License

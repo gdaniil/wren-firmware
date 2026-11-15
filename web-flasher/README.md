@@ -14,12 +14,20 @@ Optionally add `firmware.json` with `sha`, `short_sha`, `built_at` (ISO UTC), an
 `envs: ["default", "x4c", "x4pro"]`. In that folder run `python3 -m http.server 8000`, then visit
 `http://localhost:8000`. Web Serial needs localhost or HTTPS.
 
-Choose X3 or X4 (C3), X4 Classic, or X4 Pro and connect an awake reader with
-a data cable. X4 Classic and X4 Pro are untested on hardware. Save the full
-16 MB backup somewhere safe, or confirm you already have a backup of this reader.
-Install Wren, wait for completion, unplug, and press power to restart.
-The browser can initiate the backup download but cannot confirm that the user
-kept it. Keep the page open during backup and installation.
+Connect an awake reader with a data cable, then choose X3 or X4 (C3), X4 Pro,
+or X4 Classic and install. The chip, flash size, eFuse and partition checks run
+when you press install, before anything is written. X4 Classic and X4 Pro are
+untested on hardware. Wait for completion, unplug, and press power to restart.
+Keep the page open during installation.
+
+The page no longer offers a backup step (design decision, 15 Nov 2026). The
+installer writes only the inactive app slot and one otadata sector, so the
+bootloader, partition table, NVS and filesystem stay as they were. A full stock
+backup can still be made with `esptool.py read_flash` (see the project brief);
+`ReaderFlasher.backup()` remains in `lib/flasher.js`.
+
+For a design preview without a reader, serve the folder on localhost and open
+`?state=unsupported|phone|connect|choose|installing|done|error`.
 
 ## Flash contract
 
@@ -41,10 +49,8 @@ app0 `0x10000 / 0x7e0000`, app1 `0x7f0000 / 0x7e0000`, SPIFFS
 [SDK X4 Classic](https://github.com/Free-Ink/freeink-sdk/blob/6a208c0c46cce99bafa334bc4f171f5e558c5195/docs/xteink-x4c-support.md).
 
 Reads: partition table at `0x8000` (4096 bytes), otadata at `0xe000` (8192 bytes),
-and full flash `0x0` through `0xffffff` for backup in 64 KiB chunks.
-Each backup chunk is checked against the device MD5 before it is accepted.
-The backup uses 16 MB of browser memory plus download/transport copies, not
-reader heap. Chunking bounds esptool's repeated concatenation during reads.
+and, only in the unused `backup()` helper, full flash `0x0` through `0xffffff` in
+64 KiB chunks, each checked against the device MD5.
 
 Writes follow the reference CrossPoint-family OTA sequence:
 
@@ -68,9 +74,9 @@ a selector verification failure is reported and requires reconnecting.
 ## Checks and deployment
 
 Run `node --test web-flasher/test/` (Node 22 or newer). Tests use fake loaders;
-they never request a serial port. Hardware checks belong to the human: preserve
-a backup, confirm wrong hardware/layout fails, then verify installation, manual
-restart and reading on each selected model. A backup may take several minutes.
+they never request a serial port. Hardware checks belong to the human: keep a
+stock backup made with esptool, confirm wrong hardware/layout fails, then verify
+installation, manual restart and reading on each selected model.
 
 `wren-pages.yml` builds `default`, `x4c`, and `x4pro`, tests this code, and uploads the static site
 with its firmware and build metadata on pushes to `ours` except docs-only changes.

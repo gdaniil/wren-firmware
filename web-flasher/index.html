@@ -3,44 +3,63 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Install Wren, a calmer reading firmware for Xteink e-ink readers, from your browser.">
   <title>Wren for Xteink</title>
+  <link rel="preload" href="assets/fonts/literata-opsz.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/ibm-plex-mono-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
-<main>
-  <header><h1>Wren for Xteink</h1><p id="build">Loading firmware build…</p></header>
-  <p id="unsupported" hidden>Use Chrome or Edge on a computer to install Wren.</p>
-  <section id="flow" hidden aria-label="Install Wren">
-    <p id="step" class="eyebrow">Step 1 of 3</p>
-    <h2 id="heading">Connect your reader</h2>
-    <fieldset id="models">
-      <legend>Which reader do you have?</legend>
-      <label><input type="radio" name="model" value="c3"> <span>X3 or X4</span></label>
-      <label><input type="radio" name="model" value="x4c"> <span>X4 Classic <small>Not yet tested on this model.</small></span></label>
-      <label><input type="radio" name="model" value="x4pro"> <span>X4 Pro <small>Not yet tested on this model.</small></span></label>
-    </fieldset>
-    <p id="hint">Choose your reader, then connect it.</p>
-    <button id="connect" type="button" disabled>Connect</button>
-    <div id="backup-step" hidden>
-      <button id="backup" type="button">Save a backup</button>
-      <label><input id="already" type="checkbox"> <span>I already have a backup of this reader</span></label>
-      <button id="install" type="button" disabled>Install Wren</button>
-    </div>
-    <div id="progress-wrap" hidden><label id="progress-label" for="progress">Progress</label><progress id="progress" max="100" value="0"></progress><p id="percent">0%</p></div>
-    <p id="status" role="status" aria-live="polite"></p>
-  </section>
-  <section id="fonts" aria-labelledby="fonts-heading">
-    <h2 id="fonts-heading">Reading fonts</h2>
-    <p class="muted">Wren sets books in Literata, Golos and Bitter. Unzip the file and copy the <code>fonts</code> folder to the root of the SD card. Without it, the reader uses Literata in three sizes.</p>
-    <a id="fonts-link" class="button secondary" href="./wren-fonts.zip" download>Download fonts</a>
-  </section>
-  <noscript>Enable JavaScript in Chrome or Edge on a computer to install Wren.</noscript>
-  <footer id="credits">
-    <p>Wren is built on <a href="https://github.com/crosspoint-reader/crosspoint-reader">CrossPoint Reader</a> and the <a href="https://github.com/Free-Ink/freeink-sdk">FreeInk SDK</a>. The firmware is free software under GPLv3. Not affiliated with Xteink.</p>
-    <p><a id="source-link" href="https://github.com/gdaniil/wren-firmware">Source code</a> · Firmware licenses: <a href="./LICENSE-firmware.txt">X3 or X4</a>, <a href="./LICENSE-firmware-x4c.txt">X4 Classic</a>, <a href="./LICENSE-firmware-x4pro.txt">X4 Pro</a> · <a href="./LICENSE-THIRD-PARTY.md">Installer credits</a></p>
-  </footer>
+<main class="layout">
+  <div class="installer-column">
+    <header class="hero">
+      <img src="assets/wren.svg" width="81" height="96" alt="">
+      <h1>hey, wren</h1>
+      <p>a quieter way to read on your&nbsp;xteink</p>
+    </header>
+    <section id="installer" aria-label="Install Wren" data-state="connect">
+      <p data-show="unsupported">ahh... please, use chrome to install wren</p>
+      <a id="get-chrome" class="button-outline" data-show="unsupported" href="https://www.google.com/chrome/">get chrome <img src="assets/chevron.svg" width="6" height="12" alt=""></a>
+      <p class="hint" data-show="unsupported">edge works too</p>
+      <p data-show="phone">oh... open this page in chrome on your computer</p>
+      <p data-show="connect">plug in and wake your reader</p>
+      <button id="connect" type="button" data-show="connect">connect reader</button>
+      <p id="choose-text" data-show="choose">which reader do you have?</p>
+      <fieldset id="models" data-show="choose">
+        <legend class="visually-hidden">Reader model</legend>
+        <label><input type="radio" name="model" value="c3" checked><span>x3/x4</span></label>
+        <label><input type="radio" name="model" value="x4pro"><span>x4 pro</span></label>
+        <label><input type="radio" name="model" value="x4c"><span>x4 classic</span></label>
+      </fieldset>
+      <button id="install" type="button" data-show="choose">install wren</button>
+      <p id="progress-text" data-show="installing">installing wren...<br>keep the cable connected</p>
+      <p data-show="done">ready to read</p>
+      <progress id="progress" max="100" value="0" aria-label="Installation progress" data-show="installing done"></progress>
+      <p id="percent" data-show="installing">0%</p>
+      <p data-show="done">unplug the cable, then press the power button to restart</p>
+      <p data-show="done">for literata, golos and bitter, unzip fonts.zip and copy the fonts folder to your sd card</p>
+      <a id="fonts-link" class="button-outline" href="./wren-fonts.zip" download data-show="done"><span id="fonts-label">fonts.zip</span><img src="assets/download.svg" width="30" height="30" alt=""></a>
+      <p id="error-title" data-show="error">connection ended</p>
+      <p id="error-text" data-show="error">unplug the cable, wake the reader, plug it back in and try again</p>
+      <button id="retry" type="button" data-show="error">try again</button>
+      <p id="status" role="status" aria-live="polite" class="hint"></p>
+      <noscript>enable javascript in chrome or edge on a computer to install wren</noscript>
+    </section>
+  </div>
+  <div class="features">
+    <article class="feature"><div><h2>books, ready to read</h2><p>good type and spacing, set before you open a book</p></div><img src="assets/screen-reading.png" width="328" height="492" alt="Wren reading screen: chapter one of Moby-Dick" decoding="async"></article>
+    <article class="feature"><div><h2>fewer settings</h2><p>font, size, alignment, orientation. that's it</p></div><img src="assets/screen-settings.png" width="328" height="492" alt="Wren reader settings" loading="lazy" decoding="async"></article>
+    <article class="feature"><div><h2>your library is home</h2><p>open the reader, pick up your book. the rest is two tabs away</p></div><img src="assets/screen-library.png" width="328" height="492" alt="Wren home screen with the library" loading="lazy" decoding="async"></article>
+    <article class="feature"><div><h2>send books your way</h2><p>wi-fi, hotspot, calibre or sd card. nothing new to learn</p></div><img src="assets/screen-transfer.png" width="328" height="492" alt="Wren Wi-Fi transfer screen with a QR code" loading="lazy" decoding="async"></article>
+    <article class="feature"><div><h2>familiar, but nicer</h2><p>built on crosspoint, so it works with the apps you have</p></div><img src="assets/screen-end.png" width="328" height="492" alt="Wren end of book screen" loading="lazy" decoding="async"></article>
+    <article class="feature"><div><h2>safe to try</h2><p>your books stay on the card. crosspoint is one install away</p></div><img src="assets/screen-boot.png" width="328" height="492" alt="Wren start screen: hey, wren" loading="lazy" decoding="async"></article>
+    <footer id="credits">
+      <p>Wren is built on <a href="https://github.com/crosspoint-reader/crosspoint-reader">CrossPoint Reader</a> and the <a href="https://github.com/Free-Ink/freeink-sdk">FreeInk SDK</a>. The firmware is free software under GPLv3. Not affiliated with Xteink.</p>
+      <p><a id="source-link" href="https://github.com/gdaniil/wren-firmware">Source code</a> · Firmware licenses: <a href="./LICENSE-firmware.txt">X3 or X4</a>, <a href="./LICENSE-firmware-x4c.txt">X4 Classic</a>, <a href="./LICENSE-firmware-x4pro.txt">X4 Pro</a> · <a href="./LICENSE-THIRD-PARTY.md">Installer credits</a></p>
+    </footer>
+  </div>
 </main>
 </body>
 </html>
