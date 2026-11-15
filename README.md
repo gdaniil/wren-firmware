@@ -57,7 +57,7 @@ settings stay as they were. Details: [web-flasher/README.md](web-flasher/README.
 
 | Model | Chip | Status |
 | --- | --- | --- |
-| Xteink X3 | ESP32-C3 | Main target |
+| Xteink X3 | ESP32-C3 | Tested on hardware ([log](docs/ours/HARDWARE_LOG.md)) |
 | Xteink X4 | ESP32-C3 | Builds, not tested on hardware |
 | Xteink X4 Classic | ESP32-S3 | Builds, not tested on hardware |
 | Xteink X4 Pro | ESP32-S3 | Builds, not tested on hardware |
@@ -86,6 +86,7 @@ community, 300+ contributors whose history this repository keeps, and the
 [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk). If you like Wren, consider
 [funding CrossPoint contributors](https://app.royalty.dev/crosspoint-reader/crosspoint-reader).
 
-The source is under the [MIT License](LICENSE). Built firmware includes third-party
-components under their own licenses: see [licenses/](licenses/).
+The source code is under the [MIT License](LICENSE). The built firmware is GPLv3,
+because it includes wolfSSL. Other third-party parts keep their own licenses: see
+[licenses/](licenses/README.md).
 Not affiliated with Xteink.
