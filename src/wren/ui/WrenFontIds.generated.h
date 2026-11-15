@@ -4,11 +4,17 @@
 #define WREN_GOLOS_18_FONT_ID (1477283703)
 #define WREN_GOLOS_24_FONT_ID (61155716)
 #define WREN_GOLOS_40_FONT_ID (-1888549295)
+#define WREN_GOLOS_32_FONT_ID (-1567263487)
+#define WREN_GOLOS_56_HEADLINE_FONT_ID (788560901)
+#define WREN_GOLOS_18_SEMIBOLD_FONT_ID (-1441427847)
 #define WREN_GOLOS_160_DIGITS_FONT_ID (-284684285)
 #define WREN_MONO_16_FONT_ID (1842293767)
 
 static_assert(WREN_GOLOS_18_FONT_ID != 0, "Font ID collision with sentinel");
 static_assert(WREN_GOLOS_24_FONT_ID != 0, "Font ID collision with sentinel");
 static_assert(WREN_GOLOS_40_FONT_ID != 0, "Font ID collision with sentinel");
+static_assert(WREN_GOLOS_32_FONT_ID != 0, "Font ID collision with sentinel");
+static_assert(WREN_GOLOS_56_HEADLINE_FONT_ID != 0, "Font ID collision with sentinel");
+static_assert(WREN_GOLOS_18_SEMIBOLD_FONT_ID != 0, "Font ID collision with sentinel");
 static_assert(WREN_GOLOS_160_DIGITS_FONT_ID != 0, "Font ID collision with sentinel");
 static_assert(WREN_MONO_16_FONT_ID != 0, "Font ID collision with sentinel");

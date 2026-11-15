@@ -1,3 +1,3 @@
-add_executable(WrenLayoutTest WrenLayoutTest.cpp HintStateTest.cpp ReaderMenuStateTest.cpp GoToStateTest.cpp ChaptersStateTest.cpp BookmarksStateTest.cpp ReaderSettingsStateTest.cpp)
+add_executable(WrenLayoutTest WrenLayoutTest.cpp HintStateTest.cpp ReaderMenuStateTest.cpp GoToStateTest.cpp ChaptersStateTest.cpp BookmarksStateTest.cpp ReaderSettingsStateTest.cpp HomeStateTest.cpp SetupStateTest.cpp FilesStateTest.cpp SendStateTest.cpp WifiStateTest.cpp KeyboardStateTest.cpp)
 target_link_libraries(WrenLayoutTest PRIVATE crosspoint_test_common GTest::gtest_main)
 gtest_discover_tests(WrenLayoutTest)

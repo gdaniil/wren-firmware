@@ -85,9 +85,9 @@ void WrenReaderMenuActivity::loop() {
     }
     return;
   }
-  int delta = (mappedInput.wasPressed(Button::Down) || mappedInput.wasPressed(Button::PageForward)) ? 1
-              : (mappedInput.wasPressed(Button::Up) || mappedInput.wasPressed(Button::PageBack))    ? -1
-                                                                                                    : 0;
+  int delta = (mappedInput.wasPressed(Button::Right) || mappedInput.wasPressed(Button::PageForward)) ? 1
+              : (mappedInput.wasPressed(Button::Left) || mappedInput.wasPressed(Button::PageBack))   ? -1
+                                                                                                     : 0;
   if (delta) {
     selected = (selected + delta + 8) % 8;
     confirming = false;

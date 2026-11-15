@@ -233,11 +233,12 @@ Install custom fonts via the web interface or manual SD card copy.
 
 ## Wren typography
 
-Installing the selected mode's `WrenLiterata`, `WrenGolos`, or `WrenBitter` family
-activates Wren typography when the exact required x-height file is available.
+The selected mode uses its `WrenLiterata`, `WrenGolos`, or `WrenBitter` SD font
+when the exact required x-height file is available.
 For example, use `/.fonts/WrenLiterata/WrenLiterata_14.cpfont`. These filename
-numbers are x-height pixels. Missing families or required sizes keep the normal
-reader settings. The mode/step/font settings currently have no dedicated reader UI.
+numbers are x-height pixels. When the selected Wren size is unavailable,
+built-in Literata uses the nearest 12, 14 or 17 pixel
+x-height. Wren layout uses that actual size.
 
 Wren controls margins, line pitch and paragraphs. Small and standard modes use a
 one-em indent; large mode uses no indent and rounds its half-line paragraph gap

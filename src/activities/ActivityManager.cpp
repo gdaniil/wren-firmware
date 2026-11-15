@@ -23,7 +23,6 @@
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
 #include "library/LibraryListActivity.h"
-#include "network/CrossPointWebServerActivity.h"
 #include "network/UsbDriveActivity.h"
 #include "plugins/PluginCatalogActivity.h"
 #include "reader/ReaderActivity.h"
@@ -33,6 +32,10 @@
 #include "util/BmpViewerActivity.h"
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
+#include "wren/home/WrenHomeActivity.h"
+#include "wren/send/WrenSendActivity.h"
+#include "wren/setup/WrenFilesActivity.h"
+#include "wren/setup/WrenSetupActivity.h"
 
 static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -270,14 +273,12 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
   }
 }
 
-void ActivityManager::goToFileTransfer() {
-  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
-}
+void ActivityManager::goToFileTransfer() { replaceActivity(std::make_unique<WrenSendActivity>(renderer, mappedInput)); }
 
 void ActivityManager::goToJoinNetwork() {
   // Post heap-defrag reboot: enter the web-server activity straight in Join
   // Network mode (skips mode selection, does not reboot again).
-  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput, /*startInJoinNetwork=*/true));
+  replaceActivity(std::make_unique<WrenSendActivity>(renderer, mappedInput, /*startInJoinNetwork=*/true));
 }
 
 void ActivityManager::goToUsbDrive() {
@@ -294,11 +295,28 @@ void ActivityManager::goToUsbDrive() {
 }
 
 void ActivityManager::goToSettings(const SettingsSection openSection) {
+  if (openSection == SettingsSection::End) {
+    // ActivityManager owns the setup root until replacement or sleep.
+    auto setup = makeUniqueNoThrow<WrenSetupActivity>(renderer, mappedInput);
+    if (!setup) {
+      LOG_ERR("ACT", "OOM: setup activity");
+      return;
+    }
+    replaceActivity(std::move(setup));
+    return;
+  }
   replaceActivity(std::make_unique<SettingsListActivity>(renderer, mappedInput, openSection));
 }
 
 void ActivityManager::goToFileBrowser(std::string path) {
-  replaceActivity(std::make_unique<FileBrowserActivity>(renderer, mappedInput, std::move(path)));
+  // Callers pass a file path (book, image) or "/"; the Wren browser opens a folder.
+  std::string folder = FsHelpers::extractFolderPath(path);
+  auto activity = makeUniqueNoThrow<WrenFilesActivity>(renderer, mappedInput, folder.empty() ? "/" : folder);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: files activity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToLibrary() {
@@ -375,7 +393,7 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
   }
-  replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, cleanInitialRefresh));
+  replaceActivity(std::make_unique<WrenHomeActivity>(renderer, mappedInput, cleanInitialRefresh));
 }
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
 

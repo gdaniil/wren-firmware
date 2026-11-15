@@ -7,6 +7,7 @@
 #include <ObfuscationUtils.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -387,14 +388,19 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
   spec.focusReadingEnabled = focusReadingEnabled != 0;
   const auto mode = static_cast<wren::Mode>(wrenMode);
   const auto font = static_cast<wren::Font>(wrenFont[wrenMode]);
-  const auto type = wren::resolve(wren::activeBoardPpi(), mode, wrenStep[wrenMode], font,
-                                  wren::isEnglishLanguage(bookLanguage) ? "en" : bookLanguage);
+  auto type = wren::resolve(wren::activeBoardPpi(), mode, wrenStep[wrenMode], font,
+                            wren::isEnglishLanguage(bookLanguage) ? "en" : bookLanguage);
   const int wrenFontId =
       sdFontIdResolver ? sdFontIdResolver(sdFontResolverCtx, wren::fontFamily(font), type.xHeightPx) : 0;
-  if (wrenFontId != 0) {
-    spec.fontId = wrenFontId;
+  {
+    const auto effectiveFont = wrenFontId != 0 ? font : wren::Font::Literata;
+    if (wrenFontId == 0) {
+      type.xHeightPx = builtinWrenXHeight(type.xHeightPx);
+      type.linePitchPx = static_cast<int>(std::round(wren::modeSpec(mode).lineStepXh * type.xHeightPx));
+    }
+    spec.fontId = getReaderFontId();
     spec.linePitchPx = type.linePitchPx;
-    spec.fontEmHundredths = wren::fontEmHundredths(font, type.xHeightPx);
+    spec.fontEmHundredths = wren::fontEmHundredths(effectiveFont, type.xHeightPx);
     spec.paragraphIndentEm = static_cast<uint16_t>(type.indentEm * 100);
     spec.paragraphSpaceLines = static_cast<uint16_t>(type.spaceLines * 100);
     spec.hyphenationZone = static_cast<uint8_t>(type.hyphenation.zone * 100);
@@ -471,28 +477,5 @@ int CrossPointSettings::getReaderFontId() const {
       wren::resolve(wren::activeBoardPpi(), static_cast<wren::Mode>(wrenMode), wrenStep[wrenMode], font, "");
   const int wrenId = sdFontIdResolver ? sdFontIdResolver(sdFontResolverCtx, wren::fontFamily(font), type.xHeightPx) : 0;
   if (wrenId != 0) return wrenId;
-  // Check SD card font first
-  if (sdFontFamilyName[0] != '\0' && sdFontIdResolver) {
-    int id = sdFontIdResolver(sdFontResolverCtx, sdFontFamilyName, fontPointSize);
-    if (id != 0) return id;
-    // Fall through to built-in if SD font not found
-  }
-
-  // A built-in family only exists at BUILTIN_READER_POINT_SIZES, so a size
-  // carried over from an SD family may not be one of them. ensureLoaded()
-  // normally persists the snap; snap again here (without allocating — this runs
-  // in the page render loop) so rendering is correct even before it has run.
-  const uint8_t pt =
-      snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
-  switch (pt) {
-    case 12:
-      return NOTOSANS_12_FONT_ID;
-    case 16:
-      return NOTOSANS_16_FONT_ID;
-    case 18:
-      return NOTOSANS_18_FONT_ID;
-    case 14:
-    default:
-      return NOTOSANS_14_FONT_ID;
-  }
+  return builtinWrenFontId(builtinWrenXHeight(type.xHeightPx));
 }

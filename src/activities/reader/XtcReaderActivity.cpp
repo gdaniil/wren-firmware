@@ -2,6 +2,8 @@
 
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
+#include <HalClock.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Memory.h>
@@ -15,6 +17,7 @@
 #include "XtcReaderChapterSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "wren/ui/WrenChrome.h"
 
 bool XtcReaderActivity::loadBook() {
   auto loadedXtc = makeUniqueNoThrow<Xtc>(bookPath, "/.crosspoint");
@@ -70,75 +73,22 @@ void XtcReaderActivity::renderBook() {
   saveProgress();
 }
 
-XtcReaderActivity::StatusBarInfo XtcReaderActivity::getStatusBarInfo() const {
-  const auto sb = SETTINGS.statusBarSpec();
-  const int bookPageCount = static_cast<int>(xtc->getPageCount());
-  const int bookPage = static_cast<int>(currentPage) + 1;
-  std::string title = sb.titleMode == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE ? xtc->getTitle() : "";
-
-  if (!xtc->hasChapters()) {
-    return StatusBarInfo{bookPage, bookPageCount, std::move(title)};
-  }
-
-  const auto& chapters = xtc->getChapters();
-  const auto chapterIt = std::find_if(chapters.begin(), chapters.end(), [this](const xtc::ChapterInfo& chapter) {
-    return currentPage >= chapter.startPage && currentPage <= chapter.endPage;
-  });
-
-  if (chapterIt == chapters.end() || chapterIt->endPage < chapterIt->startPage) {
-    return StatusBarInfo{bookPage, bookPageCount, std::move(title)};
-  }
-
-  if (sb.titleMode == CrossPointSettings::STATUS_BAR_TITLE::CHAPTER_TITLE) {
-    title = chapterIt->name.empty() ? tr(STR_UNNAMED) : chapterIt->name;
-  }
-
-  return StatusBarInfo{static_cast<int>(currentPage - chapterIt->startPage) + 1,
-                       static_cast<int>(chapterIt->endPage - chapterIt->startPage) + 1, std::move(title)};
-}
-
-void XtcReaderActivity::renderStatusBarOverlay(GfxRenderer& renderer, const StatusBarOverlayPosition position) const {
-  const auto sb = SETTINGS.statusBarSpec();
-  const bool drawBottom = sb.xtcMode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_BOTTOM &&
-                          position == StatusBarOverlayPosition::Bottom;
-  const bool drawTop = sb.xtcMode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_TOP &&
-                       position == StatusBarOverlayPosition::Top;
-  if (!drawBottom && !drawTop) {
+void XtcReaderActivity::renderStatusBarOverlay(GfxRenderer& renderer) const {
+  const auto mode = SETTINGS.statusBarSpec().xtcMode;
+  const bool top = mode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_TOP;
+  if ((!top && mode != CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_BOTTOM) ||
+      UITheme::getInstance().getStatusBarHeight() <= 0) {
     return;
   }
-
-  const int statusBarHeight = UITheme::getInstance().getStatusBarHeight();
-  if (statusBarHeight <= 0) {
-    return;
-  }
-
-  int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
-  renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
-                                   &orientedMarginLeft);
-
-  int clearY;
-  int paddingBottom = 0;
-  if (position == StatusBarOverlayPosition::Bottom) {
-    clearY = renderer.getScreenHeight() - orientedMarginBottom - statusBarHeight - 4;
-    if (clearY < 0) {
-      clearY = 0;
-    }
-  } else {
-    clearY = orientedMarginTop;
-    paddingBottom = renderer.getScreenHeight() - statusBarHeight - orientedMarginBottom - orientedMarginTop - 4;
-  }
-  const int clearHeight = position == StatusBarOverlayPosition::Bottom
-                              ? renderer.getScreenHeight() - orientedMarginBottom - clearY
-                              : statusBarHeight + 4;
-  if (clearHeight > 0) {
-    renderer.fillRect(0, clearY, renderer.getScreenWidth(), clearHeight, false);
-  }
-
-  const int pageCount = static_cast<int>(xtc->getPageCount());
-  const int displayPage = static_cast<int>(currentPage) + 1;
-  const float progress = pageCount > 0 ? (static_cast<float>(displayPage) * 100.0f) / pageCount : 0.0f;
-  const auto pageInfo = getStatusBarInfo();
-  GUI.drawStatusBar(renderer, progress, pageInfo.currentPage, pageInfo.pageCount, pageInfo.title, paddingBottom);
+  // Same as upstream: the band is drawn over the edge of the pre-rendered page.
+  int marginTop, marginRight, marginBottom, marginLeft;
+  renderer.getOrientedViewableTRBL(&marginTop, &marginRight, &marginBottom, &marginLeft);
+  const int y = top ? marginTop : std::max(0, renderer.getScreenHeight() - marginBottom - 40);
+  char clock[16] = {};
+  if (!halClock.formatTime(clock, sizeof(clock), false)) clock[0] = '\0';
+  const auto count = xtc->getPageCount();
+  const float fraction = count ? static_cast<float>(currentPage + 1) / count : 0.0f;
+  wren::ui::drawReaderStatusLine(renderer, clock, fraction, powerManager.getBatteryPercentage(), y);
 }
 
 void XtcReaderActivity::renderPage() {
@@ -278,11 +228,7 @@ void XtcReaderActivity::renderPage() {
 
   free(pageBuffer);
 
-  if (SETTINGS.statusBarSpec().xtcMode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_TOP) {
-    renderStatusBarOverlay(renderer, StatusBarOverlayPosition::Top);
-  } else {
-    renderStatusBarOverlay(renderer, StatusBarOverlayPosition::Bottom);
-  }
+  renderStatusBarOverlay(renderer);
 
   ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
 

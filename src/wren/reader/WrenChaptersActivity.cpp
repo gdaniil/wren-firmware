@@ -67,10 +67,10 @@ void WrenChaptersActivity::loop() {
     finish();
     return;
   }
-  navigator.onPressAndContinuous({B::Up}, [this] { move(-1, true); });
-  navigator.onPressAndContinuous({B::Down}, [this] { move(1, true); });
-  navigator.onPressAndContinuous({B::PageBack, B::Left}, [this] { move(-visible(), false); });
-  navigator.onPressAndContinuous({B::PageForward, B::Right}, [this] { move(visible(), false); });
+  navigator.onPressAndContinuous({B::Left}, [this] { move(-1, true); });
+  navigator.onPressAndContinuous({B::Right}, [this] { move(1, true); });
+  navigator.onPressAndContinuous({B::PageBack}, [this] { move(-visible(), false); });
+  navigator.onPressAndContinuous({B::PageForward}, [this] { move(visible(), false); });
 }
 void WrenChaptersActivity::render(RenderLock&&) {
   using namespace wren::ui;

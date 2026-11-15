@@ -2,12 +2,14 @@
 
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
+#include <I18n.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 
+#include "CrossPointSettings.h"
 #include "WrenFonts.h"
 #include "WrenLayout.h"
 
@@ -93,6 +95,70 @@ void drawIcon(const GfxRenderer& r, const Icon& icon, int x, int y, int scale, b
       if (icon.rows[j] & (uint32_t{1} << (icon.width - 1 - i)))
         r.fillRect(x + i * scale, y + j * scale, scale, scale, ink);
 }
+int textWidth(const GfxRenderer& r, int font, const char* text, int tracking) {
+  return text && *text ? width(r, font, text, tracking) : 0;
+}
+void drawTextFit(const GfxRenderer& r, int font, int x, int y, const char* text, int maxWidth, bool ink, int tracking) {
+  if (maxWidth <= 0) return;
+  char s[CAP];
+  copyText(s, text, false);
+  fit(r, s, font, tracking, maxWidth);
+  draw(r, font, x, y, s, ink, tracking);
+}
+namespace {
+// Lays out word-wrapped text; draws it when doDraw. Returns the number of lines.
+int wrap(const GfxRenderer& r, int font, int x, int y, const char* text, int maxWidth, int maxLines, int lineStep,
+         bool ink, int tracking, bool doDraw) {
+  if (!text || !*text || maxLines <= 0 || maxWidth <= 0) return 0;
+  char all[CAP];
+  copyText(all, text, false);
+  const char* p = all;
+  int lines = 0;
+  while (*p && lines < maxLines) {
+    while (*p == ' ') ++p;
+    if (!*p) break;
+    char line[CAP];
+    size_t used = 0;
+    const char* q = p;
+    // Take whole words while the line still fits.
+    while (*q) {
+      const char* end = q;
+      while (*end && *end != ' ') ++end;
+      const size_t start = used;
+      if (used) line[used++] = ' ';
+      const size_t len = std::min<size_t>(end - q, CAP - 1 - used);
+      memcpy(line + used, q, len);
+      line[used + len] = 0;
+      if (start && width(r, font, line, tracking) > maxWidth) {
+        line[start] = 0;
+        used = start;
+        break;
+      }
+      used += len;
+      q = end;
+      while (*q == ' ') ++q;
+      if (!start && width(r, font, line, tracking) > maxWidth) break;  // one word wider than the line
+    }
+    line[used] = 0;
+    // On the last line keep the rest of the text so fit() cuts it with an ellipsis.
+    if (lines == maxLines - 1 && *q) copyText(line, p, false);
+    if (doDraw) {
+      fit(r, line, font, tracking, maxWidth);
+      draw(r, font, x, y + lines * lineStep, line, ink, tracking);
+    }
+    ++lines;
+    p = q;
+  }
+  return lines;
+}
+}  // namespace
+int drawTextWrapped(const GfxRenderer& r, int font, int x, int y, const char* text, int maxWidth, int maxLines,
+                    int lineStep, bool ink, int tracking) {
+  return wrap(r, font, x, y, text, maxWidth, maxLines, lineStep, ink, tracking, true);
+}
+int wrappedLineCount(const GfxRenderer& r, int font, const char* text, int maxWidth, int maxLines, int tracking) {
+  return wrap(r, font, 0, 0, text, maxWidth, maxLines, 0, true, tracking, false);
+}
 int labelWidth(const GfxRenderer& r, const char* text) {
   char upper[CAP];
   copyText(upper, text, true);
@@ -110,22 +176,32 @@ void drawMenuStatusBar(const GfxRenderer& r, const char* clock, int percent) {
   draw(r, LABEL, 20, 6, text, true, 1);
   percent = std::max(0, std::min(100, percent));
   char number[8];
+  const bool showNumber = SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_ALWAYS;
+  if (!showNumber) {
+    drawBattery(r, r.getScreenWidth() - 20 - 25, 8, percent);
+    return;
+  }
   snprintf(number, sizeof(number), "%d%%", percent);
   int tx = r.getScreenWidth() - 20 - width(r, LABEL, number, 1);
   draw(r, LABEL, tx, 6, number, true, 1);
   int bx = tx - 8 - 25;
   drawBattery(r, bx, 8, percent);
 }
-void drawReaderStatusLine(const GfxRenderer& r, const char* clock, float fraction, int percent) {
-  r.fillRect(0, 0, r.getScreenWidth(), 40, false);
+void drawReaderStatusLine(const GfxRenderer& r, const char* clock, float fraction, int percent, int y) {
+  r.fillRect(0, y, r.getScreenWidth(), 40, false);
   percent = std::max(0, std::min(100, percent));
   char number[8];
-  snprintf(number, sizeof(number), "%d%%", percent);
-  const int textY = (40 - r.getTextHeight(LABEL)) / 2;
-  const int tx = r.getScreenWidth() - 32 - width(r, LABEL, number, 1);
-  draw(r, LABEL, tx, textY, number, true, 1);
-  const int bx = tx - 12 - 25;
-  drawBattery(r, bx, (40 - 11) / 2, percent);
+  const int textY = y + (40 - r.getTextHeight(LABEL)) / 2;
+  // The reader hides the number for both "in reader" and "always".
+  const bool showNumber = SETTINGS.hideBatteryPercentage == CrossPointSettings::HIDE_NEVER;
+  int bx = r.getScreenWidth() - 32 - 25;
+  if (showNumber) {
+    snprintf(number, sizeof(number), "%d%%", percent);
+    const int tx = r.getScreenWidth() - 32 - width(r, LABEL, number, 1);
+    draw(r, LABEL, tx, textY, number, true, 1);
+    bx = tx - 12 - 25;
+  }
+  drawBattery(r, bx, y + (40 - 11) / 2, percent);
   int left = 32;
   if (clock && *clock) {
     char text[CAP];
@@ -133,7 +209,7 @@ void drawReaderStatusLine(const GfxRenderer& r, const char* clock, float fractio
     draw(r, LABEL, left, textY, text, true, 1);
     left += width(r, LABEL, text, 1) + 16;
   }
-  drawProgressLine(r, left, (40 - 6) / 2, bx - 16 - left, fraction);
+  drawProgressLine(r, left, y + (40 - 6) / 2, bx - 16 - left, fraction);
 }
 int drawHeader(const GfxRenderer& r, int y, const char* crumb, const char* title, const char* rightLabel) {
   char text[CAP];
@@ -171,6 +247,26 @@ int drawBookHeader(const GfxRenderer& r, int y, const char* title, int page, int
   r.fillRect(0, y + 101, r.getScreenWidth(), 3, true);
   return y + 104;
 }
+void drawTabHeader(const GfxRenderer& r, int top, int activeTab) {
+  const int sw = r.getScreenWidth();
+  drawIcon(r, icons::Wren, 20, top + 8, 2, true);
+  const int x = 100, w = sw - 20 - x, y = top + 12;
+  r.drawRect(x, y, w, 56, 3, true);
+  const StrId labels[] = {StrId::STR_WREN_TAB_LIBRARY, StrId::STR_WREN_TAB_SEND, StrId::STR_WREN_TAB_SETUP};
+  const int cell = (w - 12) / 3;
+  for (int i = 0; i < 3; ++i) {
+    const int cx = x + 3 + i * (cell + 3);
+    const int cw = i == 2 ? x + w - 3 - cx : cell;
+    if (i) r.fillRect(cx - 3, y, 3, 56, true);
+    const bool current = i == activeTab;
+    if (current) r.fillRect(cx, y + 3, cw, 50, true);
+    const char* label = I18N.get(labels[i]);
+    int font = WREN_GOLOS_32_FONT_ID;
+    if (textWidth(r, font, label, -1) > cw - 8) font = WREN_GOLOS_24_FONT_ID;
+    drawTextFit(r, font, cx + (cw - std::min(cw - 8, textWidth(r, font, label, -1))) / 2,
+                y + (56 - r.getTextHeight(font)) / 2, label, cw - 8, !current, -1);
+  }
+}
 int drawRow(const GfxRenderer& r, int y, const Row& row) {
   const int sw = r.getScreenWidth();
   bool ink = !row.selected;
@@ -182,6 +278,12 @@ int drawRow(const GfxRenderer& r, int y, const Row& row) {
     int scale = row.marker == Marker::Chevron ? 2 : row.iconScale;
     if (icon && scale > 0)
       drawIcon(r, *icon, right + (24 - icon->width * scale) / 2, y + (52 - icon->height * scale) / 2, scale, ink);
+    right -= 16;
+  } else if (row.marker == Marker::Toggle) {
+    right -= 48;
+    r.drawRect(right, y + 13, 48, 26, 3, ink);
+    if (row.on) r.fillRect(right + 3, y + 16, 42, 20, ink);
+    r.fillRect(right + (row.on ? 28 : 6), y + 19, 14, 14, row.on ? !ink : ink);
     right -= 16;
   } else if (row.marker == Marker::Options) {
     int count = std::max(0, std::min(5, row.optionCount));
@@ -197,7 +299,7 @@ int drawRow(const GfxRenderer& r, int y, const Row& row) {
   }
   char text[CAP];
   if (row.value && *row.value) {
-    copyText(text, row.value, true);
+    copyText(text, row.value, row.uppercaseValue);
     fit(r, text, LABEL, 1, std::max(0, right - 20));
     int w = width(r, LABEL, text, 1);
     right -= w;
@@ -225,10 +327,10 @@ void drawChapterRow(const GfxRenderer& r, int y, const char* number, const char*
   draw(r, ROW, left, y + (60 - r.getTextHeight(ROW)) / 2, text, ink, -1);
   r.fillRect(0, y + 60, sw, 2, true);
 }
-void drawButtonTabs(GfxRenderer& r, const Tab (&labels)[4]) {
+void drawButtonTabs(GfxRenderer& r, const Tab (&labels)[4], bool physicalEdge) {
   if (gpio.hasTouch()) return;
   auto old = r.getOrientation();
-  r.setOrientation(GfxRenderer::Portrait);
+  if (physicalEdge) r.setOrientation(GfxRenderer::Portrait);
   int y = r.getScreenHeight() - 30;
   const bool grayscale = r.getRenderMode() != GfxRenderer::BW && !r.grayPlanesAreAbsolute();
   for (int i = 0; i < 4; ++i) {

@@ -305,9 +305,11 @@ TEST(WrenLayout, GluedTitleNeverSplitsFromName) {
   EXPECT_TRUE(found);
 }
 TEST(WrenLayout, RussianDialogueAndInlineNestedQuotes) {
-  const auto pages = layout("- Да, - ответил он. <i>\"Он</i> сказал: \"привет\"\" ...", wrenSpec(), 600, 200, false, "ru");
+  const auto pages =
+      layout("- Да, - ответил он. <i>\"Он</i> сказал: \"привет\"\" ...", wrenSpec(), 600, 200, false, "ru");
   std::string text;
-  for (const auto& page : pages) for (const auto& line : page) text += line.text;
+  for (const auto& page : pages)
+    for (const auto& line : page) text += line.text;
   EXPECT_NE(text.find("«Он"), std::string::npos);
   EXPECT_NE(text.find("„привет“»"), std::string::npos);
   EXPECT_NE(text.find("…"), std::string::npos);

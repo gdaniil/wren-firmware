@@ -17,6 +17,7 @@
 #include "components/themes/lyra/Lyra3CoversTheme.h"
 #include "components/themes/lyra/LyraTheme.h"
 #include "components/themes/roundedraff/RoundedRaffTheme.h"
+#include "wren/ui/WrenTheme.h"
 
 UITheme UITheme::instance;
 
@@ -48,7 +49,7 @@ void UITheme::setTheme(CrossPointSettings::UI_THEME type) {
     case CrossPointSettings::UI_THEME::COVER_GRID:
     case CrossPointSettings::UI_THEME::LYRA: {
       // The cover home owns its screen-lifetime UI state; other screens retain Lyra styling.
-      auto theme = makeUniqueNoThrow<LyraTheme>();
+      auto theme = makeUniqueNoThrow<WrenTheme>();
       if (!theme) {
         LOG_ERR("UI", "OOM: Lyra theme");
         return;

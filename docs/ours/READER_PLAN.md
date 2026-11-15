@@ -7,7 +7,7 @@ Written 14 Nov 2026 on `ours` @ `c416e993`.
 
 1. **Reader fonts live on the SD card as `.cpfont`, not in flash.** Three families x ~22 pixel sizes x 4 styles
    does not fit the app partition. The `.cpfont` pipeline already exists (`lib/EpdFont/scripts/fontconvert_sdcard.py`,
-   variable-font instancing via fontTools, `SdCardFontRegistry`). Built-in Noto Sans stays as the fallback when
+   variable-font instancing via fontTools, `SdCardFontRegistry`). Built-in Literata is the fallback when
    the SD fonts are missing.
 2. **A `.cpfont` "size" means x-height in pixels, not points.** Files are `WrenLiterata_15.cpfont` etc. The registry
    parses `<Family>_<n>.cpfont` with a `uint8_t` size, so no format change. Weight is a function of

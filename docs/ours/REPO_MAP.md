@@ -43,8 +43,8 @@ A theme is two things: a `BaseTheme` subclass (drawing) and a `ThemeMetrics` con
 
 ## 5. Fonts, Cyrillic, screenshots
 
-- Built-ins: Noto Sans 12/14/16/18 (reader) and Ubuntu 8/10/12 (UI), registered at `src/main.cpp:78-97` and `:529-530`; ids in `src/fontIds.h`.
-- **Cyrillic is in the built-ins.** `fontconvert.py:87-89` exports U+0400-04FF. The generated headers carry it: `notosans_14_regular.h:2893`, `ubuntu_10_regular.h:3055`, `ubuntu_12_regular.h:3711` (`{0x400, 0x4FF, ...}`). That range holds ґ є і ї (U+0490-0491, 0404, 0456, 0457). Checked on three font files only; **the remaining weights are unverified**. Whether glyphs render correctly, and hyphenation for ru/uk, needs the device.
+- Built-ins: Literata 12/14/17 px x-height (reader) and Ubuntu 8/10/12 (UI), registered at `src/main.cpp:78-97` and `:529-530`; ids in `src/fontIds.h`.
+- **Cyrillic is in the built-ins.** `fontconvert.py:87-89` exports U+0400-04FF. Noto fallback glyphs provide missing Literata coverage, while the Ubuntu headers also carry the range (`{0x400, 0x4FF, ...}`). That range holds ґ є і ї (U+0490-0491, 0404, 0456, 0457). Checked on three font files only; **the remaining weights are unverified**. Whether glyphs render correctly, and hyphenation for ru/uk, needs the device.
 - SD-card fonts (`.cpfont`, TTF/OTF on PSRAM boards only): `docs/sd-card-fonts.md`.
 - Screenshots: power + down buttons (`src/main.cpp:921-930`, also `EpubReaderActivity.cpp:1989`) write a 1-bit BMP to `/screenshots/` on the SD card (`ScreenshotUtil.cpp:81-203`). **Needs a device with an SD card; there is no host rendering path.**
 - Without a device: the SDK already has a host renderer. `freeink-sdk/libs/ui/FreeInkUI/tools/builder/server.py` serves a local page (`127.0.0.1:8088`) that compiles a screen against the real `DisplayTarget` and returns SVG (`freeink-sdk/docs/freeink-ui.md:352-366`). `tools/render_gallery.sh` does the same for the component gallery into `docs/images/`. Both use the SDK's own compact font and default tokens (`render_gallery.cpp:7-10`), **not our theme metrics or the firmware fonts**. A harness that feeds our `ThemeMetrics` and the Ubuntu UI font into the same renderer is small new work (**unverified, not tried**). The firmware-side `FreeInkUI` host tests (`test/host/run.sh`) only check, they do not draw.
@@ -58,6 +58,9 @@ Do not remove or rename; new optional fields are fine.
 - mDNS hostname `crosspoint` (`src/activities/network/CrossPointWebServerActivity.cpp:48`).
 - `GET /api/status` fields: `version`, `firmwareFamily`, `pluginApi`, `pluginCapabilities`, `ip`, `mode`, `rssi`, `freeHeap`, `uptime`, `device`, `serial`, optional `deviceId` (`CrossPointWebServer.cpp:~715-780`).
 - `firmwareFamily = "crosspoint"`: `src/util/FirmwareIdentity.h:5`.
+- **Known difference:** our hotspot is the open network `wren-xxxx` (`src/wren/send/SendState.h:19`), not
+  `CrossPoint-Reader` as `docs/webserver-endpoints.md:550` says. Kept on purpose (Daniil, 15 Nov). Ports, mDNS and
+  UDP discovery are unchanged. Smoke test: Send to X4 and CrossPoint Sync must also work over the hotspot.
 - File API, upload, WebSocket upload, settings, fonts, OPDS, Wi-Fi, plugin endpoints: `docs/webserver-endpoints.md` (HTTP pages `:14-28`, status `:31-68`, file API `:70-226`).
 - **Side effect to watch:** `uiTheme` is a key in `/api/settings` (`SettingsList.cpp:52`). A new enum value is additive, but do not reorder existing values.
 - `device` value: `"X3"` or `"X4"` on the C3 binary (`gpio.deviceIsX3()`, `:745-747`); on other envs it returns `BoardConfig::ACTIVE.name`. The exact string for X4 Classic and X4 Pro is **unverified** (not looked up in the SDK profiles).

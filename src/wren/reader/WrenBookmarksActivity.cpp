@@ -173,8 +173,8 @@ void WrenBookmarksActivity::loop() {
     openSelectedBookmark();
     return;
   }
-  navigator.onPressAndContinuous({B::Up}, [this] { move(-1); });
-  navigator.onPressAndContinuous({B::Down}, [this] { move(1); });
+  navigator.onPressAndContinuous({B::Left}, [this] { move(-1); });
+  navigator.onPressAndContinuous({B::Right}, [this] { move(1); });
 }
 
 void WrenBookmarksActivity::render(RenderLock&&) {

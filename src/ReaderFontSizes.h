@@ -16,32 +16,27 @@
 // therefore come from whichever family is active: the built-in or vector set
 // below, or the .cpfont files a user installed for an SD family.
 
-// The built-in Noto Sans family is compiled in at exactly these
-// point sizes (see the global font objects in main.cpp).
+// Preserve the four legacy size choices; Wren mode and step control Wren typography.
 inline constexpr uint8_t BUILTIN_READER_POINT_SIZES[] = {12, 14, 16, 18};
+inline constexpr uint8_t BUILTIN_WREN_XHEIGHTS[] = {12, 14, 17};
+inline constexpr int BUILTIN_WREN_FONT_IDS[] = {WREN_LITERATA_12_FONT_ID, WREN_LITERATA_14_FONT_ID,
+                                                WREN_LITERATA_17_FONT_ID};
 
 // Selects a built-in size without loading it; returns 0 for other font families.
 inline int builtinReaderFontVariant(const int fontId, const float scale) {
-  static constexpr int FAMILIES[][std::size(BUILTIN_READER_POINT_SIZES)] = {
-      {NOTOSANS_12_FONT_ID, NOTOSANS_14_FONT_ID, NOTOSANS_16_FONT_ID, NOTOSANS_18_FONT_ID},
-  };
-  for (const int* family : FAMILIES) {
-    const int* end = family + std::size(BUILTIN_READER_POINT_SIZES);
-    const int* base = std::find(family, end, fontId);
-    if (base == end) continue;
-    const float target = BUILTIN_READER_POINT_SIZES[base - family] * scale;
-    size_t pick = scale < 1.0f ? 0 : static_cast<size_t>(base - family);
-    for (size_t i = 0; i < std::size(BUILTIN_READER_POINT_SIZES); ++i) {
-      const float points = BUILTIN_READER_POINT_SIZES[i];
-      // Shrinking rounds down; growing takes the nearest available size.
-      if (scale < 1.0f ? points <= target
-                       : std::fabs(points - target) < std::fabs(BUILTIN_READER_POINT_SIZES[pick] - target)) {
-        pick = i;
-      }
+  const int* family = BUILTIN_WREN_FONT_IDS;
+  const int* end = family + std::size(BUILTIN_WREN_XHEIGHTS);
+  const int* base = std::find(family, end, fontId);
+  if (base == end) return 0;
+  const float target = BUILTIN_WREN_XHEIGHTS[base - family] * scale;
+  size_t pick = scale < 1.0f ? 0 : static_cast<size_t>(base - family);
+  for (size_t i = 0; i < std::size(BUILTIN_WREN_XHEIGHTS); ++i) {
+    const float size = BUILTIN_WREN_XHEIGHTS[i];
+    if (scale < 1.0f ? size <= target : std::fabs(size - target) < std::fabs(BUILTIN_WREN_XHEIGHTS[pick] - target)) {
+      pick = i;
     }
-    return family[pick];
   }
-  return 0;
+  return family[pick];
 }
 
 // Vector (.ttf/.otf) fonts offer every whole point size from 8 through 22.
@@ -59,4 +54,15 @@ uint8_t snapToNearestPointSize(const uint8_t* sizes, size_t count, uint8_t pt);
 
 inline uint8_t snapToNearestPointSize(const std::vector<uint8_t>& sizes, const uint8_t pt) {
   return sizes.empty() ? pt : snapToNearestPointSize(sizes.data(), sizes.size(), pt);
+}
+
+inline uint8_t builtinWrenXHeight(const uint8_t requested) {
+  return snapToNearestPointSize(BUILTIN_WREN_XHEIGHTS, std::size(BUILTIN_WREN_XHEIGHTS), requested);
+}
+
+inline int builtinWrenFontId(const uint8_t xHeight) {
+  for (size_t i = 0; i < std::size(BUILTIN_WREN_XHEIGHTS); ++i) {
+    if (BUILTIN_WREN_XHEIGHTS[i] == xHeight) return BUILTIN_WREN_FONT_IDS[i];
+  }
+  return WREN_LITERATA_14_FONT_ID;
 }

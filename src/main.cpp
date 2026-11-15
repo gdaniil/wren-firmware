@@ -51,6 +51,8 @@
 #include "util/ScreenshotUtil.h"
 #include "util/SlideSwitch.h"
 #include "util/Timezones.h"
+#include "wren/system/WrenNoCardActivity.h"
+#include "wren/typography/ReaderFontEm.h"
 #include "wren/ui/WrenFonts.h"
 
 #if CROSSPOINT_VECTOR_FONTS
@@ -76,33 +78,29 @@ static unsigned long allowSleepAt = 0;
 static bool wakePowerReleasePending = false;
 
 // Fonts
-EpdFont notosans14RegularFont(&notosans_14_regular);
-EpdFont notosans14BoldFont(&notosans_14_bold);
-EpdFont notosans14ItalicFont(&notosans_14_italic);
-EpdFont notosans14BoldItalicFont(&notosans_14_bolditalic);
-EpdFontFamily notosans14FontFamily(14, &notosans14RegularFont, &notosans14BoldFont, &notosans14ItalicFont,
-                                   &notosans14BoldItalicFont);
-#ifndef OMIT_FONTS
-EpdFont notosans12RegularFont(&notosans_12_regular);
-EpdFont notosans12BoldFont(&notosans_12_bold);
-EpdFont notosans12ItalicFont(&notosans_12_italic);
-EpdFont notosans12BoldItalicFont(&notosans_12_bolditalic);
-EpdFontFamily notosans12FontFamily(12, &notosans12RegularFont, &notosans12BoldFont, &notosans12ItalicFont,
-                                   &notosans12BoldItalicFont);
-EpdFont notosans16RegularFont(&notosans_16_regular);
-EpdFont notosans16BoldFont(&notosans_16_bold);
-EpdFont notosans16ItalicFont(&notosans_16_italic);
-EpdFont notosans16BoldItalicFont(&notosans_16_bolditalic);
-EpdFontFamily notosans16FontFamily(16, &notosans16RegularFont, &notosans16BoldFont, &notosans16ItalicFont,
-                                   &notosans16BoldItalicFont);
-EpdFont notosans18RegularFont(&notosans_18_regular);
-EpdFont notosans18BoldFont(&notosans_18_bold);
-EpdFont notosans18ItalicFont(&notosans_18_italic);
-EpdFont notosans18BoldItalicFont(&notosans_18_bolditalic);
-EpdFontFamily notosans18FontFamily(18, &notosans18RegularFont, &notosans18BoldFont, &notosans18ItalicFont,
-                                   &notosans18BoldItalicFont);
+EpdFont literata12RegularFont(&wren_literata_12_regular);
+EpdFont literata12BoldFont(&wren_literata_12_bold);
+EpdFont literata12ItalicFont(&wren_literata_12_italic);
+EpdFont literata12BoldItalicFont(&wren_literata_12_bolditalic);
+EpdFontFamily literata12FontFamily(12, &literata12RegularFont, &literata12BoldFont, &literata12ItalicFont,
+                                   &literata12BoldItalicFont,
+                                   wren::fontEmHundredths(wren::Font::Literata, 12) / 100.0f);
 
-#endif  // OMIT_FONTS
+EpdFont literata14RegularFont(&wren_literata_14_regular);
+EpdFont literata14BoldFont(&wren_literata_14_bold);
+EpdFont literata14ItalicFont(&wren_literata_14_italic);
+EpdFont literata14BoldItalicFont(&wren_literata_14_bolditalic);
+EpdFontFamily literata14FontFamily(14, &literata14RegularFont, &literata14BoldFont, &literata14ItalicFont,
+                                   &literata14BoldItalicFont,
+                                   wren::fontEmHundredths(wren::Font::Literata, 14) / 100.0f);
+
+EpdFont literata17RegularFont(&wren_literata_17_regular);
+EpdFont literata17BoldFont(&wren_literata_17_bold);
+EpdFont literata17ItalicFont(&wren_literata_17_italic);
+EpdFont literata17BoldItalicFont(&wren_literata_17_bolditalic);
+EpdFontFamily literata17FontFamily(17, &literata17RegularFont, &literata17BoldFont, &literata17ItalicFont,
+                                   &literata17BoldItalicFont,
+                                   wren::fontEmHundredths(wren::Font::Literata, 17) / 100.0f);
 
 EpdFont smallFont(&ubuntu_8_regular);
 EpdFontFamily smallFontFamily(8, &smallFont);
@@ -521,12 +519,9 @@ void setupDisplayAndFonts(bool seamless = false) {
   }
   fontCacheManager.setFontDecompressor(&fontDecompressor);
   renderer.setFontCacheManager(&fontCacheManager);
-  renderer.insertFont(NOTOSANS_14_FONT_ID, notosans14FontFamily);
-#ifndef OMIT_FONTS
-  renderer.insertFont(NOTOSANS_12_FONT_ID, notosans12FontFamily);
-  renderer.insertFont(NOTOSANS_16_FONT_ID, notosans16FontFamily);
-  renderer.insertFont(NOTOSANS_18_FONT_ID, notosans18FontFamily);
-#endif  // OMIT_FONTS
+  renderer.insertFont(WREN_LITERATA_12_FONT_ID, literata12FontFamily);
+  renderer.insertFont(WREN_LITERATA_14_FONT_ID, literata14FontFamily);
+  renderer.insertFont(WREN_LITERATA_17_FONT_ID, literata17FontFamily);
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
@@ -613,7 +608,7 @@ void setup() {
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
     setupDisplayAndFonts(isSilentReboot);
-    activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
+    activityManager.replaceActivity(std::make_unique<WrenNoCardActivity>(renderer, mappedInputManager));
     return;
   }
 

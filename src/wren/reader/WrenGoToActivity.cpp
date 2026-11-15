@@ -59,10 +59,10 @@ void WrenGoToActivity::loop() {
     finish();
     return;
   }
-  navigator.onPressAndContinuous({B::PageBack, B::Left}, [this] { adjust(-1); });
-  navigator.onPressAndContinuous({B::PageForward, B::Right}, [this] { adjust(1); });
-  navigator.onPressAndContinuous({B::Up}, [this] { adjust(10); });
-  navigator.onPressAndContinuous({B::Down}, [this] { adjust(-10); });
+  navigator.onPressAndContinuous({B::PageBack}, [this] { adjust(-1); });
+  navigator.onPressAndContinuous({B::PageForward}, [this] { adjust(1); });
+  navigator.onPressAndContinuous({B::Left}, [this] { adjust(10); });
+  navigator.onPressAndContinuous({B::Right}, [this] { adjust(-10); });
 }
 void WrenGoToActivity::render(RenderLock&&) {
   using namespace wren::ui;

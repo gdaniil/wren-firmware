@@ -30,6 +30,8 @@
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+#include "wren/system/WrenSleepScreen.h"
+#include "wren/ui/WrenBusyPlate.h"
 
 namespace {
 // Metalio: B/W sleep images use the full 0xF7 waveform instead of HALF (two
@@ -650,8 +652,11 @@ bool drawSleepPopupPreservingFrame(GfxRenderer& renderer) {
   const int frameThickness = metrics.popupFrameThickness;
   const int popupY = static_cast<int>(renderer.getScreenHeight() * metrics.popupTopOffsetRatio);
   const int popupHeight = renderer.getLineHeight(UI_12_FONT_ID) + metrics.popupMarginY * 2;
-  const int bandTop = std::max(0, popupY - frameThickness);
-  const int bandBottom = std::min(renderer.getScreenHeight(), popupY + popupHeight + frameThickness);
+  // The Wren plate is taller than the theme popup: save a band that covers both.
+  const Rect plate = wren::ui::busyPlateBounds(renderer);
+  const int bandTop = std::max(0, std::min(popupY - frameThickness, plate.y));
+  const int bandBottom =
+      std::min(renderer.getScreenHeight(), std::max(popupY + popupHeight + frameThickness, plate.y + plate.height));
   const int bandHeight = bandBottom - bandTop;
   const size_t bandBytes = renderer.getRegionByteSize(0, bandTop, renderer.getScreenWidth(), bandHeight);
 
@@ -727,13 +732,15 @@ void SleepActivity::onEnter() {
     return renderTransparentCustomSleepScreen();
   }
 
-  // Show popup with reader orientation only when going to sleep from reader
-  if (APP_STATE.lastSleepFromReader) {
-    ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
-    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
-    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
-  } else {
-    GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+  if (sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::DARK &&
+      sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {
+    if (APP_STATE.lastSleepFromReader) {
+      ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+      GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+      renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+    } else {
+      GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+    }
   }
 
   switch (SETTINGS.sleepScreen) {
@@ -820,19 +827,7 @@ void SleepActivity::renderCustomSleepScreen() const {
 // sequence, used once for the sleep image. It never runs the multi-flash GC
 // waveform (0xF7) that FULL_REFRESH selects (#2471's blinking complaint).
 void SleepActivity::renderDefaultSleepScreen() const {
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-
-  renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
-
-  // Make sleep screen dark unless light is selected in settings
-  if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {
-    renderer.invertScreen();
-  }
-
+  wren::system::drawSleepScreen(renderer);
   renderer.displayBuffer(kSleepClean);
 }
 
@@ -1050,49 +1045,39 @@ void SleepActivity::renderCoverSleepScreen() const {
   std::string coverBmpPath;
   bool cropped = SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP;
 
-  // Check if the current book is XTC, TXT, or EPUB
+  // Release the book before any fallback loads progress for the sleep screen.
   if (FsHelpers::hasXtcExtension(APP_STATE.openEpubPath)) {
-    // Handle XTC file
     Xtc lastXtc(APP_STATE.openEpubPath, "/.crosspoint");
     if (!lastXtc.load()) {
       LOG_ERR("SLP", "Failed to load last XTC");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    if (!lastXtc.generateCoverBmp()) {
+    } else if (!lastXtc.generateCoverBmp()) {
       LOG_ERR("SLP", "Failed to generate XTC cover bmp");
-      return (this->*renderNoCoverSleepScreen)();
+    } else {
+      coverBmpPath = lastXtc.getCoverBmpPath();
     }
-
-    coverBmpPath = lastXtc.getCoverBmpPath();
   } else if (FsHelpers::hasReflowableBookExtension(APP_STATE.openEpubPath)) {
-    // Handle EPUB, TXT, or Markdown file
     Epub lastEpub(APP_STATE.openEpubPath, "/.crosspoint");
-    // Skip loading css since we only need metadata here
     if (!lastEpub.load(true, true)) {
       LOG_ERR("SLP", "Failed to load last book");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    if (!lastEpub.generateCoverBmp(cropped, originalThresholds)) {
+    } else if (!lastEpub.generateCoverBmp(cropped, originalThresholds)) {
       LOG_ERR("SLP", "Failed to generate cover bmp");
-      return (this->*renderNoCoverSleepScreen)();
+    } else {
+      coverBmpPath = lastEpub.getCoverBmpPath(cropped, originalThresholds);
     }
-
-    coverBmpPath = lastEpub.getCoverBmpPath(cropped, originalThresholds);
-  } else {
-    return (this->*renderNoCoverSleepScreen)();
   }
+  if (coverBmpPath.empty()) return (this->*renderNoCoverSleepScreen)();
 
-  HalFile file;
-  if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
-    Bitmap bitmap(file);
-    if (bitmap.parseHeaders() == BmpReaderError::Ok) {
-      LOG_DBG("SLP", "Rendering sleep cover: %s", coverBmpPath.c_str());
-      if (withOverlay) overlayCover = &bitmap;
-      renderBitmapSleepScreen(bitmap);
-      overlayCover = nullptr;
-      return;
+  {
+    HalFile file;
+    if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
+      Bitmap bitmap(file);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        LOG_DBG("SLP", "Rendering sleep cover: %s", coverBmpPath.c_str());
+        if (withOverlay) overlayCover = &bitmap;
+        renderBitmapSleepScreen(bitmap);
+        overlayCover = nullptr;
+        return;
+      }
     }
   }
 

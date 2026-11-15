@@ -29,6 +29,12 @@ class EpdFontFamily {
         italic(italic),
         boldItalic(boldItalic),
         sizeInPixels(pointSize * FONT_RASTER_DPI / 72.0f) {}
+  // Pixel-sized generated fonts can supply their actual em size.
+  EpdFontFamily(uint16_t pointSize, const EpdFont* regular, const EpdFont* bold, const EpdFont* italic,
+                const EpdFont* boldItalic, float emPixels)
+      : EpdFontFamily(pointSize, regular, bold, italic, boldItalic) {
+    sizeInPixels = emPixels;
+  }
   ~EpdFontFamily() = default;
   float getSizeInPixels() const { return sizeInPixels; }
   void getTextDimensions(const char* string, int* w, int* h, Style style = REGULAR) const;

@@ -2571,7 +2571,7 @@ std::string EpubReaderActivity::textRowName(int row) const {
 }
 
 std::string EpubReaderActivity::textRowValue(int row) const {
-  static constexpr StrId kFamily[] = {StrId::STR_NOTO_SANS};
+  static constexpr StrId kFamily[] = {StrId::STR_WREN_BUILTIN_LITERATA};
   switch (row) {
     case 0:
       if (SETTINGS.sdFontFamilyName[0] != '\0') return SETTINGS.sdFontFamilyName;

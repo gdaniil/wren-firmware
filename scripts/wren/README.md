@@ -9,7 +9,17 @@ python scripts/wren/build_fonts.py --weights measured
 ```
 
 Outputs are ignored under `build/wren-fonts/{Literata,Golos,Bitter}/`.
-Copy those folders to the reader's SD font directory. Each folder includes
+Do not copy those folders by hand: the reader expects
+`/fonts/WrenLiterata/`, `/fonts/WrenGolos/` and `/fonts/WrenBitter/`.
+Install them with one of:
+
+```sh
+python scripts/wren/install_fonts.py --sd /Volumes/<card>        # mounted SD card, fast
+python scripts/wren/install_fonts.py --device crosspoint.local   # over Wi-Fi, Send tab on
+```
+
+Without the selected SD font size, the reader uses built-in Literata at the
+nearest 12, 14 or 17 pixel x-height. Each folder includes
 the source OFL license. `WrenLiterata_15.cpfont` has a 15-pixel monochrome
 x-height; the number is not a point size.
 
@@ -68,3 +78,7 @@ python -m unittest discover -s scripts/wren
 
 These are host checks. Inspect the PNGs and calibrate on the device before
 using the weights as final hardware typography values.
+
+Build the built-in Literata faces with `python scripts/wren/build_builtin_literata.py`.
+This uses the pinned Literata sources, `weights.json`, and the same x-height
+calibration as the SD build. It writes headers and content-derived font IDs.

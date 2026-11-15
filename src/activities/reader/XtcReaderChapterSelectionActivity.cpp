@@ -1,132 +1,127 @@
 #include "XtcReaderChapterSelectionActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalClock.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 
 #include <algorithm>
-#include <vector>
+#include <cstdio>
 
 #include "MappedInputManager.h"
-#include "components/UITheme.h"
-#include "fontIds.h"
+#include "wren/reader/ChaptersState.h"
+#include "wren/reader/ReaderMenuState.h"
+#include "wren/ui/WrenChrome.h"
 
-namespace fui = freeink::ui;
+XtcReaderChapterSelectionActivity::XtcReaderChapterSelectionActivity(GfxRenderer& r, MappedInputManager& input,
+                                                                     const std::shared_ptr<Xtc>& book, uint32_t page)
+    : Activity("XtcReaderChapterSelection", r, input), UiAppHost(r), xtc(book), currentPage(page) {}
 
-XtcReaderChapterSelectionActivity::XtcReaderChapterSelectionActivity(GfxRenderer& renderer,
-                                                                     MappedInputManager& mappedInput,
-                                                                     const std::shared_ptr<Xtc>& xtc,
-                                                                     const uint32_t currentPage)
-    : UiListActivity("XtcReaderChapterSelection", renderer, mappedInput), xtc(xtc), currentPage(currentPage) {}
-
-int XtcReaderChapterSelectionActivity::findChapterIndexForPage(const uint32_t page) const {
-  if (!xtc) {
-    return 0;
-  }
-
-  const auto& chapters = xtc->getChapters();
-  const auto chapter = std::find_if(chapters.begin(), chapters.end(), [page](const auto& candidate) {
-    return page >= candidate.startPage && page <= candidate.endPage;
-  });
-  return chapter != chapters.end() ? static_cast<int>(chapter - chapters.begin()) : 0;
+int XtcReaderChapterSelectionActivity::visible() const {
+  return std::max(1, (renderer.getScreenHeight() - 132 - 30) / 62);
 }
 
 void XtcReaderChapterSelectionActivity::onEnter() {
-  UiListActivity::onEnter();
-
-  if (!xtc) {
-    return;
+  Activity::onEnter();
+  resetUi();
+  app.setScreen(&XtcReaderChapterSelectionActivity::buildHits, this);
+  if (xtc) {
+    title = xtc->getTitle();
+    const auto& chapters = xtc->getChapters();
+    const auto it = std::find_if(chapters.begin(), chapters.end(), [this](const auto& chapter) {
+      return currentPage >= chapter.startPage && currentPage <= chapter.endPage;
+    });
+    if (it != chapters.end()) selected = static_cast<int>(it - chapters.begin());
+    start = wren::reader::scrollStart(selected, start, visible());
   }
-
-  buildRowItems();
-
-  // Open on the current chapter, which may sit past the first page; the first
-  // screen build pulls the viewport to it (ListNav follow-on-build).
-  nav.selected = findChapterIndexForPage(currentPage);
+  requestUpdate();
 }
 
-// Derives rowItems from the xtc's chapters. Called once from onEnter() since
-// chapters are static for this screen's lifetime.
-void XtcReaderChapterSelectionActivity::buildRowItems() {
-  const auto& chapters = xtc->getChapters();
-  rowItems.clear();
-  rowItems.reserve(chapters.size());
-  for (const auto& chapter : chapters) {
-    fui::ListItem item;
-    item.label = chapter.name.empty() ? tr(STR_UNNAMED) : chapter.name.c_str();
-    item.actionValue = static_cast<int16_t>(rowItems.size());
-    rowItems.push_back(item);
-  }
+void XtcReaderChapterSelectionActivity::move(int index) {
+  const int count = xtc ? static_cast<int>(xtc->getChapters().size()) : 0;
+  if (!count) return;
+  selected = std::max(0, std::min(count - 1, index));
+  start = wren::reader::scrollStart(selected, start, visible());
+  requestUpdate();
 }
 
-void XtcReaderChapterSelectionActivity::activateIndex(const int index) {
-  // The activated row leaves this screen (finish); a lingering flash would
-  // gray an unrelated element on the next render.
-  app.clearTapFlash();
-  const auto& chapters = xtc->getChapters();
-  if (!chapters.empty() && index >= 0 && index < static_cast<int>(chapters.size())) {
-    nav.selected = index;
-    setResult(PageResult{chapters[index].startPage});
-    finish();
-  }
+void XtcReaderChapterSelectionActivity::activate(int index) {
+  if (!xtc || index < 0 || index >= static_cast<int>(xtc->getChapters().size())) return;
+  setResult(PageResult{xtc->getChapters()[index].startPage});
+  finish();
 }
 
-bool XtcReaderChapterSelectionActivity::handleButtons() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+void XtcReaderChapterSelectionActivity::loop() {
+  using B = MappedInputManager::Button;
+  RenderLock lock;
+  if (mappedInput.wasReleased(B::Back)) {
     ActivityResult result;
     result.isCancelled = true;
     setResult(std::move(result));
     finish();
-    return true;
-  }
-
-  if (!xtc) {
-    return true;  // no book: nothing else to route this pass
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    activateIndex(nav.selected);
-    return true;
-  }
-
-  return false;
-}
-
-void XtcReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-  // Content: the safe area minus the header band drawChrome paints the title in.
-  screen.setContentMarginFromScreen(fui::Insets{
-      static_cast<int16_t>(safe.y + metrics.topPadding + metrics.headerHeight),
-      static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
-      static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height)), static_cast<int16_t>(safe.x)});
-  screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
-
-  if (!xtc) {
     return;
   }
-  if (rowItems.empty()) {
-    screen.centeredText(tr(STR_NO_CHAPTERS), screen.theme().bodyText);
+  if (mappedInput.wasReleased(B::Confirm)) {
+    activate(selected);
     return;
   }
-
-  // rowItems is built once in onEnter() (see buildRowItems()) and reused
-  // here on every repaint.
-  fui::ListProps props;
-  props.items = rowItems.data();
-  props.count = static_cast<uint16_t>(rowItems.size());
-  props.action = ACTION_ROW;
-  props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
-  syncListViewport(screen, props);
-  screen.list(props);
+  const auto touch = routeTouch(mappedInput);
+  if (touch.event && touch.event.action == 1) {
+    app.clearTapFlash();
+    activate(touch.event.value);
+    return;
+  }
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+    const int count = xtc ? static_cast<int>(xtc->getChapters().size()) : 0;
+    start = std::max(0, std::min(std::max(0, count - visible()),
+                                 start + (swipe == MappedInputManager::SwipeDir::Up ? visible() : -visible())));
+    requestUpdate();
+    return;
+  }
+  const int count = xtc ? static_cast<int>(xtc->getChapters().size()) : 0;
+  navigator.onNextPress([this, count] { move(ButtonNavigator::nextIndex(selected, count)); });
+  navigator.onPreviousPress([this, count] { move(ButtonNavigator::previousIndex(selected, count)); });
+  navigator.onNextContinuous([this, count] { move(ButtonNavigator::nextPageIndex(selected, count, visible())); });
+  navigator.onPreviousContinuous(
+      [this, count] { move(ButtonNavigator::previousPageIndex(selected, count, visible())); });
 }
 
-void XtcReaderChapterSelectionActivity::drawChrome() {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+void XtcReaderChapterSelectionActivity::buildHits(UiScreen& screen, void* context) {
+  auto& self = *static_cast<XtcReaderChapterSelectionActivity*>(context);
+  const int count = self.xtc ? static_cast<int>(self.xtc->getChapters().size()) : 0;
+  for (int i = self.start; i < count && i < self.start + self.visible(); ++i) {
+    const freeink::ui::Rect row{0, static_cast<int16_t>(132 + (i - self.start) * 62),
+                                static_cast<int16_t>(self.renderer.getScreenWidth()), 62};
+    screen.frame().hit(row, 1, static_cast<int16_t>(i), freeink::ui::InputTouch);
+  }
+}
 
-  // Centered title in the header band the content margin reserves.
-  const int titleWidth = renderer.getTextWidth(UI_12_FONT_ID, tr(STR_SELECT_CHAPTER), EpdFontFamily::BOLD);
-  const int titleX = safe.x + (safe.width - titleWidth) / 2;
-  const int titleY = safe.y + metrics.topPadding + (metrics.headerHeight - renderer.getLineHeight(UI_12_FONT_ID)) / 2;
-  renderer.drawText(UI_12_FONT_ID, titleX, titleY, tr(STR_SELECT_CHAPTER), true, EpdFontFamily::BOLD);
+void XtcReaderChapterSelectionActivity::render(RenderLock&&) {
+  using namespace wren::ui;
+  renderer.clearScreen();
+  char clock[16] = {};
+  halClock.formatTime(clock, sizeof(clock), false);
+  drawMenuStatusBar(renderer, clock, powerManager.getBatteryPercentage());
+  int y = drawHeader(renderer, 28, title.c_str(), tr(STR_WREN_MENU_CHAPTERS));
+  const int count = xtc ? static_cast<int>(xtc->getChapters().size()) : 0;
+  char number[16], last[16], value[16];
+  wren::reader::chapterNumber(last, sizeof(last), std::max(0, count - 1));
+  const int numberWidth = std::max(28, labelWidth(renderer, last));
+  for (int i = start; i < count && i < start + visible(); ++i) {
+    const auto& chapter = xtc->getChapters()[i];
+    wren::reader::chapterNumber(number, sizeof(number), i);
+    snprintf(value, sizeof(value), "%d%%", wren::reader::chapterPercent(chapter.startPage, xtc->getPageCount()));
+    drawChapterRow(renderer, y, number, chapter.name.empty() ? tr(STR_UNNAMED) : chapter.name.c_str(), value,
+                   numberWidth, i == selected);
+    y += 62;
+  }
+  const Tab tabs[4] = {{TabKind::Text, tr(STR_WREN_TAB_BACK)},
+                       {TabKind::Text, tr(STR_WREN_TAB_SELECT)},
+                       {TabKind::ArrowUp},
+                       {TabKind::ArrowDown}};
+  renderUi();
+  drawButtonTabs(renderer, tabs);
+  drawEdgeTabs(renderer, true, true);
+  renderer.displayBuffer();
 }

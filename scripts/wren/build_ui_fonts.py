@@ -36,11 +36,18 @@ SOURCES = {
 # Digits only, for the go-to screen's big number: space, %, -, ., 0-9.
 NUMERALS = [(0x20, 0x20), (0x25, 0x25), (0x2D, 0x2E), (0x30, 0x39)]
 
+# Headline set for the 56 px state titles: ASCII, Russian and Ukrainian letters, apostrophe. Keeps the
+# biggest font small; the full default set at 56 px would cost about twice the flash.
+HEADLINE = [(0x20, 0x7E), (0x400, 0x45F), (0x490, 0x491), (0x2019, 0x2019)]
+
 # name, source, wght (None = static file), em px, code point intervals (None = the converter's default set)
 FONTS = [
     ("wren_golos_18", "golostext", 400, 18, None),
     ("wren_golos_24", "golostext", 400, 24, None),
     ("wren_golos_40", "golostext", 400, 40, None),
+    ("wren_golos_32", "golostext", 400, 32, None),
+    ("wren_golos_56_headline", "golostext", 400, 56, HEADLINE),
+    ("wren_golos_18_semibold", "golostext", 600, 18, None),
     ("wren_golos_160_digits", "golostext", 400, 160, NUMERALS),
     ("wren_mono_16", "ibmplexmono", None, 16, None),
 ]

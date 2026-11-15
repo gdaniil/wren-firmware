@@ -206,7 +206,7 @@ bool ReaderActivity::handleEndOfBookMenu(const bool suppressConfirmRelease) {
 bool ReaderActivity::handleEndOfBookPageTurn(const bool prevTriggered, const bool nextTriggered) {
   if (!isAtEndOfBook()) return false;
 
-  if (endOfBookOptionsReady.load(std::memory_order_acquire) && endOfBookOptions->menuActive()) {
+  if (endOfBookOptionsReady.load(std::memory_order_acquire) && endOfBookOptions->hasSuggestions()) {
     return true;
   }
   if (nextTriggered) {

@@ -83,16 +83,16 @@ void WrenReaderSettingsActivity::loop() {
     change(1);
     return;
   }
-  navigator.onPressAndContinuous({B::Up}, [this] {
+  navigator.onPressAndContinuous({B::Left}, [this] {
     selected = wren::reader::cycleSetting(selected, -1, 4);
     requestUpdate();
   });
-  navigator.onPressAndContinuous({B::Down}, [this] {
+  navigator.onPressAndContinuous({B::Right}, [this] {
     selected = wren::reader::cycleSetting(selected, 1, 4);
     requestUpdate();
   });
-  navigator.onPressAndContinuous({B::PageBack, B::Left}, [this] { change(-1); });
-  navigator.onPressAndContinuous({B::PageForward, B::Right}, [this] { change(1); });
+  navigator.onPressAndContinuous({B::PageBack}, [this] { change(-1); });
+  navigator.onPressAndContinuous({B::PageForward}, [this] { change(1); });
 }
 void WrenReaderSettingsActivity::render(RenderLock&&) {
   using namespace wren::ui;
