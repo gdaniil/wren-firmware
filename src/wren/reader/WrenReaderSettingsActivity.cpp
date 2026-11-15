@@ -18,9 +18,33 @@ namespace {
 constexpr int ROW_BOTTOM = 132 + 4 * 54;
 constexpr int BOX_TOP = ROW_BOTTOM + 24;
 constexpr int TEXT_TOP = BOX_TOP + 16 + 16 + 12;
+struct PreviewLayout {
+  int boxTop = BOX_TOP;
+  int boxBottom;
+  int labelY = BOX_TOP + 16;
+  int textTop = TEXT_TOP;
+  int bottomPadding = 20;
+};
+PreviewLayout previewLayout(const GfxRenderer& r, int lineHeight) {
+  PreviewLayout layout{BOX_TOP, r.getScreenHeight() - 54};
+  if (layout.boxBottom - layout.textTop - layout.bottomPadding < lineHeight) {
+    layout.boxTop = ROW_BOTTOM + 8;
+    layout.labelY = layout.boxTop + 8;
+    layout.textTop = layout.labelY + 16 + 4;
+    layout.bottomPadding = 12;
+    const int requiredBottom = layout.textTop + lineHeight + layout.bottomPadding;
+    const auto insets = wren::ui::contentInsets(r);
+    // Physical front hints occupy a side in landscape, leaving the lower box edge free.
+    if (requiredBottom > layout.boxBottom && (insets.left || insets.right)) {
+      layout.boxBottom = std::min(r.getScreenHeight() - 20, requiredBottom);
+    }
+  }
+  return layout;
+}
 }  // namespace
-WrenReaderSettingsActivity::WrenReaderSettingsActivity(GfxRenderer& r, MappedInputManager& i, const std::string& t)
-    : Activity("WrenReaderSettings", r, i), title(t) {}
+WrenReaderSettingsActivity::WrenReaderSettingsActivity(GfxRenderer& r, MappedInputManager& i, const std::string& t,
+                                                       bool live)
+    : Activity("WrenReaderSettings", r, i), title(t), liveRotation(live) {}
 void WrenReaderSettingsActivity::onEnter() {
   Activity::onEnter();
   updatePreview();
@@ -37,13 +61,14 @@ bool WrenReaderSettingsActivity::handleHomeGesture() {
 void WrenReaderSettingsActivity::updatePreview() {
   sdFontSystem.ensureLoaded(renderer);
   font = SETTINGS.getReaderFontId();
-  int height = std::max(0, renderer.getScreenHeight() - 54 - 20 - TEXT_TOP);
   int lineHeight = std::max(1, renderer.getLineHeight(font));
+  const auto layout = previewLayout(renderer, lineHeight);
+  const auto insets = wren::ui::contentInsets(renderer);
+  int height = std::max(0, layout.boxBottom - layout.textTop - layout.bottomPadding);
   int count = height / lineHeight;
+  int width = std::max(1, renderer.getScreenWidth() - insets.left - insets.right - 76);
   // This preview wraps text without the book layout engine or hyphenation.
-  lines = count
-              ? renderer.wrappedText(font, tr(STR_WREN_SET_SAMPLE), std::max(1, renderer.getScreenWidth() - 76), count)
-              : std::vector<std::string>{};
+  lines = count ? renderer.wrappedText(font, tr(STR_WREN_SET_SAMPLE), width, count) : std::vector<std::string>{};
 }
 void WrenReaderSettingsActivity::change(int delta) {
   RenderLock lock;
@@ -64,8 +89,10 @@ void WrenReaderSettingsActivity::change(int delta) {
     }
     case SettingsRow::Orientation:
       SETTINGS.orientation = toggleOrientation(SETTINGS.orientation);
-      ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
-      cleanRefresh = true;
+      if (liveRotation) {
+        ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+        cleanRefresh = true;
+      }
       break;
   }
   changed = true;
@@ -122,16 +149,20 @@ void WrenReaderSettingsActivity::render(RenderLock&&) {
     row.selected = selected == i;
     y = drawRow(renderer, y, row);
   }
-  int boxHeight = renderer.getScreenHeight() - 54 - BOX_TOP;
+  const int lineHeight = std::max(1, renderer.getLineHeight(font));
+  const auto layout = previewLayout(renderer, lineHeight);
+  const auto insets = contentInsets(renderer);
+  int boxHeight = layout.boxBottom - layout.boxTop;
   if (boxHeight > 0) {
-    renderer.drawRect(20, BOX_TOP, renderer.getScreenWidth() - 40, boxHeight, 3, true);
-    drawLabel(renderer, 38, BOX_TOP + 16, tr(STR_WREN_SET_PREVIEW));
-    int lineY = TEXT_TOP;
-    int width = renderer.getScreenWidth() - 76;
+    renderer.drawRect(insets.left + 20, layout.boxTop, renderer.getScreenWidth() - insets.left - insets.right - 40,
+                      boxHeight, 3, true);
+    drawLabel(renderer, insets.left + 38, layout.labelY, tr(STR_WREN_SET_PREVIEW));
+    int lineY = layout.textTop;
+    int width = renderer.getScreenWidth() - insets.left - insets.right - 76;
     for (size_t i = 0; i < lines.size(); ++i) {
       auto& line = lines[i];
       if (!justified || i + 1 == lines.size()) {
-        renderer.drawText(font, 38, lineY, line.c_str());
+        renderer.drawText(font, insets.left + 38, lineY, line.c_str());
       } else {
         int gaps = std::count(line.begin(), line.end(), ' ');
         int measured = gaps * renderer.getSpaceWidth(font);
@@ -145,7 +176,7 @@ void WrenReaderSettingsActivity::render(RenderLock&&) {
         }
         measured += renderer.getTextWidth(font, part);
         int extra = width - measured;
-        int x = 38, gap = 0;
+        int x = insets.left + 38, gap = 0;
         while (char* space = std::strchr(word, ' ')) {
           *space = '\0';
           renderer.drawText(font, x, lineY, word);
@@ -156,7 +187,7 @@ void WrenReaderSettingsActivity::render(RenderLock&&) {
         }
         renderer.drawText(font, x, lineY, word);
       }
-      lineY += std::max(1, renderer.getLineHeight(font));
+      lineY += lineHeight;
     }
   }
   const Tab tabs[4] = {{TabKind::Text, tr(STR_WREN_TAB_BACK)},

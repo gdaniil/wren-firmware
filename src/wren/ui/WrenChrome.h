@@ -5,6 +5,11 @@
 class GfxRenderer;
 
 namespace wren::ui {
+struct ContentInsets {
+  int left = 0;
+  int right = 0;
+};
+ContentInsets contentInsets(const GfxRenderer& renderer);
 enum class Marker { None, Chevron, Icon, Options, Toggle };
 struct Row {
   const char* label = nullptr;
@@ -50,7 +55,7 @@ int drawRow(const GfxRenderer& renderer, int y, const Row& row);
 void drawChapterRow(const GfxRenderer& renderer, int y, const char* number, const char* title, const char* value,
                     int numberWidth, bool selected);
 void drawButtonTabs(GfxRenderer& renderer, const Tab (&labels)[4], bool physicalEdge = true);
-void drawEdgeTabs(const GfxRenderer& renderer, bool showLeft, bool showRight);
+void drawEdgeTabs(GfxRenderer& renderer, bool showLeft, bool showRight, bool physicalEdge = true);
 void drawProgressLine(const GfxRenderer& renderer, int x, int y, int w, float fraction);
 void drawProgressBar(const GfxRenderer& renderer, int x, int y, int w, float fraction);
 }  // namespace wren::ui

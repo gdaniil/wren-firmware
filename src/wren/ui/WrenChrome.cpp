@@ -88,6 +88,22 @@ void drawBattery(const GfxRenderer& r, int x, int y, int percent) {
 }
 }  // namespace
 
+ContentInsets contentInsets(const GfxRenderer& r) {
+  if (gpio.hasTouch()) return {};
+  // Portrait bottom maps to native panel x = panelWidth - 1: left in CW, right in CCW.
+  constexpr int BUTTON_INSET = 30 + 4;
+  switch (r.getOrientation()) {
+    case GfxRenderer::Portrait:
+    case GfxRenderer::PortraitInverted:
+      return {};
+    case GfxRenderer::LandscapeClockwise:
+      return {BUTTON_INSET, 0};
+    case GfxRenderer::LandscapeCounterClockwise:
+      return {0, BUTTON_INSET};
+  }
+  return {};
+}
+
 void drawIcon(const GfxRenderer& r, const Icon& icon, int x, int y, int scale, bool ink) {
   if (scale <= 0 || icon.width > 32 || !icon.rows) return;
   for (int j = 0; j < icon.height; ++j)
@@ -212,39 +228,43 @@ void drawReaderStatusLine(const GfxRenderer& r, const char* clock, float fractio
   drawProgressLine(r, left, y + (40 - 6) / 2, bx - 16 - left, fraction);
 }
 int drawHeader(const GfxRenderer& r, int y, const char* crumb, const char* title, const char* rightLabel) {
+  const auto insets = contentInsets(r);
+  const int sw = r.getScreenWidth() - insets.left - insets.right;
   char text[CAP];
   if (crumb && *crumb) {
-    drawIcon(r, icons::ChevronLeft, 20, y + 12, 2, true);
+    drawIcon(r, icons::ChevronLeft, insets.left + 20, y + 12, 2, true);
     copyText(text, crumb, true);
-    fit(r, text, LABEL, 1, r.getScreenWidth() - 54);
-    draw(r, LABEL, 34, y + 12, text, true, 1);
+    fit(r, text, LABEL, 1, sw - 54);
+    draw(r, LABEL, insets.left + 34, y + 12, text, true, 1);
   }
   copyText(text, title, false);
   const int labelSpace = rightLabel && *rightLabel ? labelWidth(r, rightLabel) + 16 : 0;
-  fit(r, text, TITLE, -2, std::max(0, r.getScreenWidth() - 40 - labelSpace));
-  draw(r, TITLE, 20, y + 101 - 12 - r.getFontAscenderSize(TITLE), text, true, -2);
+  fit(r, text, TITLE, -2, std::max(0, sw - 40 - labelSpace));
+  draw(r, TITLE, insets.left + 20, y + 101 - 12 - r.getFontAscenderSize(TITLE), text, true, -2);
   if (rightLabel && *rightLabel) {
-    drawLabel(r, r.getScreenWidth() - 20 - labelWidth(r, rightLabel), y + 101 - 12 - 6 - r.getFontAscenderSize(LABEL),
+    drawLabel(r, insets.left + sw - 20 - labelWidth(r, rightLabel), y + 101 - 12 - 6 - r.getFontAscenderSize(LABEL),
               rightLabel);
   }
-  r.fillRect(0, y + 101, r.getScreenWidth(), 3, true);
+  r.fillRect(insets.left, y + 101, sw, 3, true);
   return y + 104;
 }
 int drawBookHeader(const GfxRenderer& r, int y, const char* title, int page, int total, int percent) {
+  const auto insets = contentInsets(r);
+  const int sw = r.getScreenWidth() - insets.left - insets.right;
   char text[CAP];
   copyText(text, title, false);
-  fit(r, text, TITLE, -2, r.getScreenWidth() - 40);
+  fit(r, text, TITLE, -2, sw - 40);
   const int lineY = y + 101 - 14 - r.getTextHeight(LABEL);
   const int barY = lineY - 8 - 8;
-  draw(r, TITLE, 20, barY - 12 - r.getTextHeight(TITLE), text, true, -2);
-  drawProgressBar(r, 20, barY, r.getScreenWidth() - 40, percent / 100.0f);
+  draw(r, TITLE, insets.left + 20, barY - 12 - r.getTextHeight(TITLE), text, true, -2);
+  drawProgressBar(r, insets.left + 20, barY, sw - 40, percent / 100.0f);
   if (total > 0) {
     snprintf(text, sizeof(text), "%d/%d", page, total);
-    draw(r, LABEL, 20, lineY, text, true, 1);
+    draw(r, LABEL, insets.left + 20, lineY, text, true, 1);
   }
   snprintf(text, sizeof(text), "%d%%", percent);
-  draw(r, LABEL, r.getScreenWidth() - 20 - width(r, LABEL, text, 1), lineY, text, true, 1);
-  r.fillRect(0, y + 101, r.getScreenWidth(), 3, true);
+  draw(r, LABEL, insets.left + sw - 20 - width(r, LABEL, text, 1), lineY, text, true, 1);
+  r.fillRect(insets.left, y + 101, sw, 3, true);
   return y + 104;
 }
 void drawTabHeader(const GfxRenderer& r, int top, int activeTab) {
@@ -270,9 +290,10 @@ void drawTabHeader(const GfxRenderer& r, int top, int activeTab) {
 }
 int drawRow(const GfxRenderer& r, int y, const Row& row) {
   const int sw = r.getScreenWidth();
+  const auto insets = contentInsets(r);
   bool ink = !row.selected;
   r.fillRect(0, y, sw, layout::ROW_HEIGHT - 2, row.selected);
-  int right = sw - 20;
+  int right = sw - insets.right - 20;
   if (row.marker == Marker::Chevron || row.marker == Marker::Icon) {
     right -= 24;
     const Icon* icon = row.marker == Marker::Chevron ? &icons::ChevronRight : row.icon;
@@ -301,13 +322,13 @@ int drawRow(const GfxRenderer& r, int y, const Row& row) {
   char text[CAP];
   if (row.value && *row.value) {
     copyText(text, row.value, row.uppercaseValue);
-    fit(r, text, LABEL, 1, std::max(0, right - 20));
+    fit(r, text, LABEL, 1, std::max(0, right - insets.left - 20));
     int w = width(r, LABEL, text, 1);
     right -= w;
     draw(r, LABEL, right, y + (52 - r.getTextHeight(LABEL)) / 2, text, ink, 1);
     right -= 16;
   }
-  int left = 20;
+  int left = insets.left + 20;
   if (row.leadingIcon) {
     drawIcon(r, *row.leadingIcon, left, y + (52 - row.leadingIcon->height) / 2, 1, ink);
     left += row.leadingIcon->width + 12;
@@ -315,23 +336,24 @@ int drawRow(const GfxRenderer& r, int y, const Row& row) {
   copyText(text, row.label, false);
   fit(r, text, ROW, -1, layout::truncationWidth(left, right));
   draw(r, ROW, left, y + (52 - r.getTextHeight(ROW)) / 2, text, ink, -1);
-  r.fillRect(0, y + 52, sw, 2, true);
+  r.fillRect(insets.left, y + 52, sw - insets.left - insets.right, 2, true);
   return y + layout::ROW_HEIGHT;
 }
 void drawChapterRow(const GfxRenderer& r, int y, const char* number, const char* title, const char* value,
                     int numberWidth, bool selected) {
   const int sw = r.getScreenWidth();
+  const auto insets = contentInsets(r);
   const bool ink = !selected;
   r.fillRect(0, y, sw, 60, selected);
-  drawLabel(r, 20, y + (60 - r.getTextHeight(LABEL)) / 2, number, ink);
-  int right = sw - 20 - labelWidth(r, value);
+  drawLabel(r, insets.left + 20, y + (60 - r.getTextHeight(LABEL)) / 2, number, ink);
+  int right = sw - insets.right - 20 - labelWidth(r, value);
   drawLabel(r, right, y + (60 - r.getTextHeight(LABEL)) / 2, value, ink);
-  int left = 20 + numberWidth + 16;
+  int left = insets.left + 20 + numberWidth + 16;
   char text[CAP];
   copyText(text, title, false);
   fit(r, text, ROW, -1, std::max(0, right - 16 - left));
   draw(r, ROW, left, y + (60 - r.getTextHeight(ROW)) / 2, text, ink, -1);
-  r.fillRect(0, y + 60, sw, 2, true);
+  r.fillRect(insets.left, y + 60, sw - insets.left - insets.right, 2, true);
 }
 void drawButtonTabs(GfxRenderer& r, const Tab (&labels)[4], bool physicalEdge) {
   if (gpio.hasTouch()) return;
@@ -360,8 +382,10 @@ void drawButtonTabs(GfxRenderer& r, const Tab (&labels)[4], bool physicalEdge) {
   }
   r.setOrientation(old);
 }
-void drawEdgeTabs(const GfxRenderer& r, bool left, bool right) {
+void drawEdgeTabs(GfxRenderer& r, bool left, bool right, bool physicalEdge) {
   if (gpio.hasTouch() || !gpio.hasEdgeSideButtons()) return;
+  const auto old = r.getOrientation();
+  if (physicalEdge) r.setOrientation(GfxRenderer::Portrait);
   for (int i = 0; i < 2; ++i) {
     if (!(i ? right : left)) continue;
     int x = i ? r.getScreenWidth() - 14 : 0;
@@ -371,6 +395,7 @@ void drawEdgeTabs(const GfxRenderer& r, bool left, bool right) {
     r.fillRect(i ? x : x + 11, 155, 3, 80, true);
     drawIcon(r, i ? icons::ChevronRight : icons::ChevronLeft, x + 4, 189, 2, true);
   }
+  r.setOrientation(old);
 }
 void drawProgressLine(const GfxRenderer& r, int x, int y, int w, float fraction) {
   if (w < 6) return;

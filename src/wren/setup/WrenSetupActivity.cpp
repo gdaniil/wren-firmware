@@ -24,7 +24,7 @@ void WrenSetupActivity::open() {
   // The manager owns one child; the small setup parent remains until the child returns.
   switch (static_cast<RootRow>(selected)) {
     case RootRow::Reader:
-      child = makeUniqueNoThrow<WrenReaderSettingsActivity>(renderer, mappedInput, tr(STR_WREN_TAB_SETUP));
+      child = makeUniqueNoThrow<WrenReaderSettingsActivity>(renderer, mappedInput, tr(STR_WREN_TAB_SETUP), false);
       break;
     case RootRow::Display:
       child = makeUniqueNoThrow<WrenSetupDisplayActivity>(renderer, mappedInput);

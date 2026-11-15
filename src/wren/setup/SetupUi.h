@@ -22,11 +22,12 @@ inline void footer(GfxRenderer& r, bool edges = true) {
                        {TabKind::ArrowUp},
                        {TabKind::ArrowDown}};
   drawButtonTabs(r, tabs, false);
-  drawEdgeTabs(r, edges, edges);
+  drawEdgeTabs(r, edges, edges, false);
 }
 // Setup lists and their hints share logical coordinates in every orientation.
 inline void clipContent(const GfxRenderer& r) { r.setClipRect(0, 0, r.getScreenWidth(), r.getScreenHeight() - 40); }
-inline void unclip(const GfxRenderer& r) { r.setClipRect(0, 0, r.getScreenWidth(), r.getScreenHeight()); }
+// Restore the renderer's unbounded default; a screen-sized rect would cut off the next orientation.
+inline void unclip(const GfxRenderer& r) { r.setClipRect(0, 0, 32767, 32767); }
 inline bool swipeSelection(const MappedInputManager& input, int& selected, int count, int visible) {
   const auto swipe = input.wasSwipe();
   if (swipe != MappedInputManager::SwipeDir::Up && swipe != MappedInputManager::SwipeDir::Down) return false;

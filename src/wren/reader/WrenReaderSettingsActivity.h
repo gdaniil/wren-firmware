@@ -8,7 +8,8 @@
 
 class WrenReaderSettingsActivity final : public Activity {
  public:
-  WrenReaderSettingsActivity(GfxRenderer&, MappedInputManager&, const std::string& title);
+  // liveRotation: rotate the screen when Orientation changes (inside a book). From Setup it only saves the setting.
+  WrenReaderSettingsActivity(GfxRenderer&, MappedInputManager&, const std::string& title, bool liveRotation = true);
   void onEnter() override;
   void loop() override;
   void render(RenderLock&&) override;
@@ -22,6 +23,7 @@ class WrenReaderSettingsActivity final : public Activity {
   std::vector<std::string> lines;
   int selected = 0;
   int font = 0;
+  bool liveRotation = true;
   bool changed = false, cleanRefresh = true;
   ButtonNavigator navigator{250, 500};
 };
