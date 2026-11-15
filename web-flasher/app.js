@@ -120,3 +120,17 @@ if (['localhost', '127.0.0.1'].includes(location.hostname)
   if (preview === 'installing') progress(22);
   if (preview === 'done') progress(100);
 }
+
+// Wren idle moves: one every 6 s, never the same twice in a row. Off for reduced motion and hidden tabs.
+const wren = $('wren');
+const moves = ['blink', 'flick', 'hop', 'sing', 'peck', 'turn'];
+let lastMove = 'turn';
+function nextMove() {
+  if (document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const options = moves.filter(move => move !== lastMove);
+  lastMove = options[Math.floor(Math.random() * options.length)];
+  delete wren.dataset.move;
+  void wren.getBoundingClientRect(); // restart the CSS animation
+  wren.dataset.move = lastMove;
+}
+setInterval(nextMove, 6000);
