@@ -4,29 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Wren for Xteink X3</title>
+  <title>Wren for Xteink</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
 <main>
-  <header><h1>Wren for Xteink X3</h1><p id="build">Loading firmware build…</p></header>
+  <header><h1>Wren for Xteink</h1><p id="build">Loading firmware build…</p></header>
   <p id="unsupported" hidden>Use Chrome or Edge on a computer to install Wren.</p>
   <section id="flow" hidden aria-label="Install Wren">
     <p id="step" class="eyebrow">Step 1 of 3</p>
     <h2 id="heading">Connect your reader</h2>
-    <p id="hint">Use the 4-pin magnetic cable. The 2-pin cable only charges. Wake the X3 first.</p>
-    <button id="connect" type="button">Connect X3</button>
+    <fieldset id="models">
+      <legend>Which reader do you have?</legend>
+      <label><input type="radio" name="model" value="c3"> <span>X3 or X4</span></label>
+      <label><input type="radio" name="model" value="x4c"> <span>X4 Classic <small>Not yet tested on this model.</small></span></label>
+      <label><input type="radio" name="model" value="x4pro"> <span>X4 Pro <small>Not yet tested on this model.</small></span></label>
+    </fieldset>
+    <p id="hint">Choose your reader, then connect it.</p>
+    <button id="connect" type="button" disabled>Connect</button>
     <div id="backup-step" hidden>
       <button id="backup" type="button">Save a backup</button>
-      <label><input id="already" type="checkbox"> <span>I already have a backup of this X3</span></label>
+      <label><input id="already" type="checkbox"> <span>I already have a backup of this reader</span></label>
       <button id="install" type="button" disabled>Install Wren</button>
     </div>
     <div id="progress-wrap" hidden><label id="progress-label" for="progress">Progress</label><progress id="progress" max="100" value="0"></progress><p id="percent">0%</p></div>
     <p id="status" role="status" aria-live="polite"></p>
   </section>
+  <section id="fonts" aria-labelledby="fonts-heading">
+    <h2 id="fonts-heading">Reading fonts</h2>
+    <p class="muted">Wren sets books in Literata, Golos and Bitter. Unzip the file and copy the <code>fonts</code> folder to the root of the SD card. Without it, the reader uses Literata in three sizes.</p>
+    <a id="fonts-link" class="button secondary" href="./wren-fonts.zip" download>Download fonts</a>
+  </section>
   <noscript>Enable JavaScript in Chrome or Edge on a computer to install Wren.</noscript>
-  <footer id="credits">Made for Xteink X3 · <a href="./LICENSE-THIRD-PARTY.md">Open source credits</a></footer>
+  <footer id="credits">
+    <p>Wren is built on <a href="https://github.com/crosspoint-reader/crosspoint-reader">CrossPoint Reader</a> and the <a href="https://github.com/Free-Ink/freeink-sdk">FreeInk SDK</a>. The firmware is free software under GPLv3. Not affiliated with Xteink.</p>
+    <p><a id="source-link" href="https://github.com/gdaniil/wren-firmware">Source code</a> · Firmware licenses: <a href="./LICENSE-firmware.txt">X3 or X4</a>, <a href="./LICENSE-firmware-x4c.txt">X4 Classic</a>, <a href="./LICENSE-firmware-x4pro.txt">X4 Pro</a> · <a href="./LICENSE-THIRD-PARTY.md">Installer credits</a></p>
+  </footer>
 </main>
 </body>
 </html>

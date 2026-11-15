@@ -68,7 +68,30 @@ jobs:
           ~/.platformio/penv/bin/pio --version
 
       - name: Build firmware
-        run: pio run -e default
+        run: pio run -e default -e x4c -e x4pro
+
+      # GPLv3 firmware: publish notices and source references beside each binary.
+      - name: Collect firmware licenses
+        run: |
+          mkdir -p _licenses
+          python scripts/build_release_license.py --env default --output _licenses/LICENSE-firmware.txt
+          python scripts/build_release_license.py --env x4c --output _licenses/LICENSE-firmware-x4c.txt
+          python scripts/build_release_license.py --env x4pro --output _licenses/LICENSE-firmware-x4pro.txt
+
+      - name: Cache reading fonts
+        id: fonts-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/wren-fonts
+            build/wren-fonts
+          key: wren-fonts-v1-${{ hashFiles('scripts/wren/*.py', 'scripts/wren/requirements.txt', 'lib/EpdFont/scripts/fontconvert_sdcard.py') }}
+
+      - name: Build reading fonts
+        if: steps.fonts-cache.outputs.cache-hit != 'true'
+        run: |
+          uv pip install --system -r scripts/wren/requirements.txt
+          python scripts/wren/build_fonts.py --weights measured
 
       - uses: actions/setup-node@v4
         with:
@@ -85,15 +108,33 @@ jobs:
           import os
           import pathlib
           import shutil
+          import zipfile
           site = pathlib.Path('_site')
           shutil.copytree('web-flasher', site, ignore=shutil.ignore_patterns('_ref', 'test'))
           shutil.copyfile('.pio/build/default/firmware.bin', site / 'firmware.bin')
+          shutil.copyfile('.pio/build/x4c/firmware.bin', site / 'firmware-x4c.bin')
+          shutil.copyfile('.pio/build/x4pro/firmware.bin', site / 'firmware-x4pro.bin')
+          for path in pathlib.Path('_licenses').glob('LICENSE-firmware*.txt'):
+              shutil.copyfile(path, site / path.name)
+          shutil.copyfile('licenses/Apache-2.0.txt', site / 'LICENSE-Apache-2.0.txt')
+          # Reading fonts as /fonts/<Family>/ for the root of the SD card.
+          fonts = pathlib.Path('build/wren-fonts')
+          families = {'Literata': 'WrenLiterata', 'Golos': 'WrenGolos', 'Bitter': 'WrenBitter'}
+          with zipfile.ZipFile(site / 'wren-fonts.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+              for folder, family in families.items():
+                  files = sorted((fonts / folder).glob(f'{family}_*.cpfont'))
+                  if not files:
+                      raise SystemExit(f'No {family} fonts in {fonts / folder}')
+                  for path in files + [fonts / folder / 'OFL.txt']:
+                      archive.write(path, f'fonts/{family}/{path.name}')
           sha = os.environ['GITHUB_SHA']
           (site / 'firmware.json').write_text(json.dumps({
               'sha': sha,
               'short_sha': sha[:7],
               'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'env': 'default',
+              'envs': ['default', 'x4c', 'x4pro'],
+              'fonts_bytes': (site / 'wren-fonts.zip').stat().st_size,
+              'source_url': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/tree/{sha}",
           }) + '\n')
           PYTHON
 

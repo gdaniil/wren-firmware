@@ -4,7 +4,17 @@
 from crosspoint-reader/crosspoint-tools at commit
 `b62c8b57880415bfc73ad5a5941cc8087846d256`.
 `lib/esptool.bundle.js` is copied unchanged from that source (vendored esptool-js;
-its embedded dependency notices are retained).
+its embedded dependency notices are retained). esptool-js is Copyright Espressif
+Systems and licensed under the Apache License 2.0
+(<https://github.com/espressif/esptool-js>); the full text is in
+[LICENSE-Apache-2.0.txt](./LICENSE-Apache-2.0.txt).
+
+The firmware files offered by this page have their own license files
+(`LICENSE-firmware*.txt`, GPLv3 for the combined firmware). The reading fonts in
+`wren-fonts.zip` are under the SIL Open Font License 1.1; each font folder carries
+its `OFL.txt`.
+
+The installer code below keeps the crosspoint-tools MIT notice:
 
 MIT License
 

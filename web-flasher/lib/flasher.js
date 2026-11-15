@@ -1,5 +1,5 @@
 /**
- * Wren X3 flasher, derived from CrossPoint ESP32 Flasher (MIT).
+ * Wren reader flasher, derived from CrossPoint ESP32 Flasher (MIT).
  * Source: crosspoint-reader/crosspoint-tools, b62c8b57880415bfc73ad5a5941cc8087846d256.
  * See ../LICENSE-THIRD-PARTY.md. Uses the locally vendored esptool-js.
  */
@@ -191,6 +191,21 @@ export const X3_PARTITION_TABLE = [
   { type: 'data-coredump', offset: 0xff0000, size: 0x10000 },
 ];
 
+export const S3_PARTITION_TABLE = [
+  { type: 'data-nvs', offset: 0x9000, size: 0x5000 },
+  { type: 'data-ota', offset: 0xe000, size: 0x2000 },
+  { type: 'app-ota_0', offset: 0x10000, size: 0x7e0000 },
+  { type: 'app-ota_1', offset: 0x7f0000, size: 0x7e0000 },
+  { type: 'data-spiffs', offset: 0xfd0000, size: 0x14000 },
+  { type: 'data-coredump', offset: 0xfe4000, size: 0x1c000 },
+];
+
+export const MODELS = {
+  c3: { name: 'X3 or X4', chip: 'ESP32-C3', efuse: { secureReg: 0x60008838, cryptReg: 0x60008834 }, layout: X3_PARTITION_TABLE },
+  x4c: { name: 'X4 Classic', chip: 'ESP32-S3', efuse: { secureReg: 0x60007038, cryptReg: 0x60007034 }, layout: S3_PARTITION_TABLE },
+  x4pro: { name: 'X4 Pro', chip: 'ESP32-S3', efuse: { secureReg: 0x60007038, cryptReg: 0x60007034 }, layout: S3_PARTITION_TABLE },
+};
+
 // --- OTA Partition ---
 
 // IDF otadata format: exactly two 4 KB flash sectors, each holding one
@@ -328,48 +343,62 @@ export function parsePartitionTable(data) {
 
 export const FLASH_BYTES = 0x1000000;
 
-// Only the known X3 layout is accepted: no device-supplied write addresses.
-export function requireX3Layout(partitions) {
-  if (JSON.stringify(partitions) !== JSON.stringify(X3_PARTITION_TABLE)) {
+// Only the selected known layout is accepted: no device-supplied write addresses.
+export function requireLayout(partitions, layout) {
+  if (JSON.stringify(partitions) !== JSON.stringify(layout)) {
     throw new Error('This reader has an unsupported partition layout.');
   }
   return partitions;
 }
 
-export function pickBootAppPartition(partitions, raw) {
-  requireX3Layout(partitions);
+export function pickBootAppPartition(partitions, raw, layout = X3_PARTITION_TABLE) {
+  requireLayout(partitions, layout);
   const app = raw ? parseOtadata(raw).activeApp : 0;
   return partitions.find(p => p.type === `app-ota_${app}`);
 }
 
-export class X3Flasher {
-  constructor(port) { this.port = port; this.loader = null; }
+export class ReaderFlasher {
+  constructor(port, modelKey) {
+    if (!Object.hasOwn(MODELS, modelKey)) throw new Error('Unknown reader model.');
+    this.port = port; this.model = MODELS[modelKey]; this.loader = null;
+  }
+
+  async createLoader() {
+    const { ESPLoader, Transport } = await import('./esptool.bundle.js');
+    return new ESPLoader({ transport: new Transport(this.port, false),
+      baudrate: 115200, romBaudrate: 115200, enableTracing: false });
+  }
 
   async connect() {
-    const { ESPLoader, Transport } = await import('./esptool.bundle.js');
-    this.loader = new ESPLoader({ transport: new Transport(this.port, false),
-      baudrate: 115200, romBaudrate: 115200, enableTracing: false });
+    this.loader = await this.createLoader();
     await this.loader.main();
-    if (this.loader.chip?.CHIP_NAME !== 'ESP32-C3') {
-      throw new Error('This reader does not have an ESP32-C3 chip.');
+    const chip = this.loader.chip?.CHIP_NAME;
+    if (chip !== this.model.chip) {
+      if (chip === 'ESP32-S3' && this.model.chip === 'ESP32-C3') {
+        throw new Error('This is an X4 Classic or X4 Pro. Choose it above and connect again.');
+      }
+      if (chip === 'ESP32-C3' && this.model.chip === 'ESP32-S3') {
+        throw new Error('This is an X3 or X4. Choose it above and connect again.');
+      }
+      throw new Error('This reader is not supported.');
     }
     if (await this.loader.getFlashSize() !== FLASH_BYTES / 1024) {
       throw new Error('This reader does not have 16 MB of flash.');
     }
-    // C3 eFuse registers: Espressif esptool/targets/esp32c3.py.
+    // eFuse registers: Espressif esptool target definitions.
     // Vendored getFlashSize() returns KiB; readReg() allows two cheap checks.
-    const secure = await this.loader.readReg(0x60008838);
-    const crypt = await this.loader.readReg(0x60008834);
+    const secure = await this.loader.readReg(this.model.efuse.secureReg);
+    const crypt = await this.loader.readReg(this.model.efuse.cryptReg);
     const count = (crypt & (7 << 18)) >>> 18;
     const encrypted = ((count & 1) + ((count >>> 1) & 1) + ((count >>> 2) & 1)) % 2;
     if ((secure & (1 << 20)) || encrypted) {
-      throw new Error('This X3 is locked. Installing could brick it, so we stopped.');
+      throw new Error('This reader is locked. Installing could brick it, so we stopped.');
     }
     await this.readTarget();
   }
 
   async readTarget() {
-    requireX3Layout(parsePartitionTable(await this.loader.readFlash(0x8000, 0x1000)));
+    requireLayout(parsePartitionTable(await this.loader.readFlash(0x8000, 0x1000)), this.model.layout);
     this.otadata = await this.loader.readFlash(0xe000, OTADATA_BYTES);
     this.ota = parseOtadata(this.otadata);
   }
@@ -391,7 +420,7 @@ export class X3Flasher {
 
   async write(data, address, progress) {
     // Explicit allowlist, including sector-rounded app writes within each slot.
-    const slot = X3_PARTITION_TABLE.find(p => p.offset === address && p.type.startsWith('app-'));
+    const slot = this.model.layout.find(p => p.offset === address && p.type.startsWith('app-'));
     const ota = (address === 0xe000 || address === 0xf000) && data.length === OTA_SECTOR_BYTES;
     if (!ota && (!slot || data.length === 0 || Math.ceil(data.length / 4096) * 4096 > slot.size)) {
       throw new Error('Unsafe flash write was blocked.');
@@ -407,11 +436,11 @@ export class X3Flasher {
 
   async install(data, progress) {
     await validateFirmwareImage(data);
-    if (imageChipName(data) !== 'ESP32-C3') throw new Error('Firmware is not for ESP32-C3.');
+    if (imageChipName(data) !== this.model.chip) throw new Error(`Firmware is not for ${this.model.chip}.`);
     await this.readTarget();
     const { inactiveApp, newSeq, targetSector } = this.ota;
-    const slot = X3_PARTITION_TABLE.find(p => p.type === `app-ota_${inactiveApp}`);
-    if (data.length > slot.size) throw new Error('Firmware is too large for this X3.');
+    const slot = this.model.layout.find(p => p.type === `app-ota_${inactiveApp}`);
+    if (data.length > slot.size) throw new Error('Firmware is too large for this reader.');
     await this.write(data, slot.offset, value => progress(value * 0.95));
     const start = targetSector * OTA_SECTOR_BYTES;
     const sector = buildNewOtadataSector(this.otadata.subarray(start, start + OTA_SECTOR_BYTES), newSeq);
