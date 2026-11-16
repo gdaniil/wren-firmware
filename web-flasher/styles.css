@@ -102,7 +102,7 @@ footer a { color: inherit; text-decoration: underline; }
   .layout { display: block; }
   .installer-column { position: static; width: 100%; height: auto; padding: 50px 10px; gap: 80px; border-right: 0; border-bottom: 4px solid var(--ink); }
   .features { padding: 50px 10px; }
-  #installer[data-state="phone"] { padding: 8px; }
+  #installer [data-show="phone"] { max-width: none; width: 100%; padding: 10px; background: repeating-conic-gradient(#dcd8cc 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
   .feature div { width: 100%; }
 }
 @media (min-width: 960px) and (max-width: 1099px) { #installer[data-state="choose"] #models { gap: 20px; } }
